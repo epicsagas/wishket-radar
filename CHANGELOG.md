@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `ProjectCard.private_matching` — 프라이빗 매칭(부스트 파트너 전용) 뱃지 여부. scan/search/get_project 모든 카드 출력에 노출.
 
 ### Changed
+- MCP 래퍼가 설치된 바이너리 버전을 플러그인 매니페스트와 비교: 낮으면 최신 릴리즈에서 자동 갱신(install.sh), 갱신 실패 시 기존 바이너리로 폴백. 플러그인 업데이트가 릴리즈 바이너리까지 따라가도록 연결.
 - README 설치 순서를 호스트 4종 → 온보딩 → 프리빌트(선택)로 바꾸고, 사용 표를 onboard → profile → scan/search/scout 순으로 맞춤.
 - MCP 래퍼와 onboard는 한방 설치(`install.sh` / `install.ps1`)를 기본 폴백으로 쓰고, `cargo build`는 git 클론에서 설치가 실패했을 때만 실행한다.
 

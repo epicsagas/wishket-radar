@@ -1,9 +1,10 @@
 #!/bin/sh
 # wishket MCP server launcher.
 # Resolution order:
-#   1. local release binary (git checkout already built)
-#   2. installed wishket-mcp (~/.local/bin or PATH, not this wrapper)
-#   3. prebuilt installer (install.sh)
+#   1. local release binary (git checkout already built) — dev override, no version check
+#   2. installed wishket-mcp (~/.local/bin or PATH, not this wrapper),
+#      version-checked against the plugin manifest
+#   3. prebuilt installer (install.sh) — when missing or older than the manifest
 #   4. cargo build only in a git checkout, after the installer failed
 # cargo may live in ~/.cargo/bin (rustup) or ~/.local/share/mise/shims (mise).
 # MCP-spawned processes get a minimal PATH, so cover both.
@@ -24,6 +25,43 @@ BIN="$PLUGIN_ROOT/server/target/release/wishket-mcp"
 WRAPPER="$PLUGIN_ROOT/scripts/wishket-mcp"
 INSTALLED="$HOME/.local/bin/wishket-mcp"
 
+# Plugin manifest version — the version the skills/agents were shipped with.
+# The binary must not be older than this; if it is, refresh from the latest release.
+manifest_version() {
+  for f in "$PLUGIN_ROOT/.claude-plugin/plugin.json" \
+           "$PLUGIN_ROOT/plugin.json" \
+           "$PLUGIN_ROOT/plugin.yaml"; do
+    [ -f "$f" ] || continue
+    v=$(grep -oE '"?version"?[[:space:]]*:[[:space:]]*"?[0-9][0-9.]*' "$f" 2>/dev/null \
+       | head -1 | grep -oE '[0-9][0-9.]*$')
+    [ -n "$v" ] && { echo "$v"; return 0; }
+  done
+  return 0
+}
+
+binary_version() {
+  "$1" --version 2>/dev/null | grep -oE '[0-9][0-9.]*' | head -1
+}
+
+# version_lt A B — true when A < B (numeric dot components; junk counts as 0)
+version_lt() {
+  v1=$1; v2=$2; i=1
+  while :; do
+    a=$(printf '%s' "$v1" | cut -d. -f$i | tr -cd '0-9'); a=${a:-0}
+    b=$(printf '%s' "$v2" | cut -d. -f$i | tr -cd '0-9'); b=${b:-0}
+    [ "$a" -lt "$b" ] && return 0
+    [ "$a" -gt "$b" ] && return 1
+    [ "$i" -gt 10 ] && return 1
+    # equal so far: stop when both ran out of components
+    ca=$(printf '%s' "$v1" | cut -d. -f$((i+1)))
+    cb=$(printf '%s' "$v2" | cut -d. -f$((i+1)))
+    [ -z "$ca" ] && [ -z "$cb" ] && return 1
+    i=$((i+1))
+  done
+}
+
+MANIFEST_VERSION=$(manifest_version)
+
 run_if_real() {
   cand=$1
   [ -n "$cand" ] && [ -x "$cand" ] || return 1
@@ -32,21 +70,42 @@ run_if_real() {
   exec "$cand"
 }
 
+# exec candidate unless it is older than the manifest
+run_if_fresh() {
+  cand=$1
+  [ -n "$cand" ] && [ -x "$cand" ] || return 1
+  [ "$cand" = "$WRAPPER" ] && return 1
+  [ "$cand" = "$0" ] && return 1
+  if [ -n "$MANIFEST_VERSION" ]; then
+    v=$(binary_version "$cand")
+    if [ -z "$v" ] || version_lt "$v" "$MANIFEST_VERSION"; then
+      echo "wishket-mcp: $cand is ${v:-unknown}, plugin wants $MANIFEST_VERSION — refreshing..." >&2
+      return 1
+    fi
+  fi
+  exec "$cand"
+}
+
 if [ -x "$BIN" ]; then
   exec "$BIN"
 fi
 
-run_if_real "$INSTALLED" || true
+run_if_fresh "$INSTALLED" || true
 found=$(command -v wishket-mcp 2>/dev/null || true)
-run_if_real "$found" || true
+run_if_fresh "$found" || true
 
 if [ -f "$PLUGIN_ROOT/install.sh" ]; then
   echo "wishket-mcp: installing prebuilt binary..." >&2
   sh "$PLUGIN_ROOT/install.sh" >&2 || true
-  run_if_real "$INSTALLED" || true
+  run_if_fresh "$INSTALLED" || true
   found=$(command -v wishket-mcp 2>/dev/null || true)
-  run_if_real "$found" || true
+  run_if_fresh "$found" || true
 fi
+
+# installer could not produce a fresh binary — run what we have rather than fail
+run_if_real "$INSTALLED" || true
+found=$(command -v wishket-mcp 2>/dev/null || true)
+run_if_real "$found" || true
 
 if [ -d "$PLUGIN_ROOT/.git" ] && command -v cargo >/dev/null 2>&1; then
   echo "wishket-mcp: prebuilt install unavailable, building from source..." >&2
