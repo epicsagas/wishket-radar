@@ -6,9 +6,13 @@
 //! the endpoint returns JSON `{result: <html>, count: <total>}`; without it
 //! the same URL returns the full server-rendered page (same card DOM).
 
+use std::time::{Duration, Instant};
+
 use scraper::{ElementRef, Html, Selector};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use tokio::sync::Mutex;
+use tokio::time::sleep;
 
 pub const BASE: &str = "https://www.wishket.com";
 /// 정체성을 밝히는 봇 UA. 위시켓은 UA 기반 차단을 하지 않고(nginx, 200 OK 확인) —
@@ -17,6 +21,24 @@ pub const UA: &str = "wishket-radar/0.1.0 (+https://github.com/epicsagas/wishket
 
 /// Inter-request delay. robots.txt Crawl-delay: 5 준수.
 pub const REQUEST_DELAY_MS: u64 = 5000;
+
+static LAST_HTTP: Mutex<Option<Instant>> = Mutex::const_new(None);
+
+pub(crate) fn remaining_crawl_delay(last: Option<Instant>, now: Instant) -> Duration {
+    last.and_then(|t| {
+        Duration::from_millis(REQUEST_DELAY_MS).checked_sub(now.saturating_duration_since(t))
+    })
+    .unwrap_or(Duration::ZERO)
+}
+
+async fn respect_crawl_delay() {
+    let mut last = LAST_HTTP.lock().await;
+    let delay = remaining_crawl_delay(*last, Instant::now());
+    if !delay.is_zero() {
+        sleep(delay).await;
+    }
+    *last = Some(Instant::now());
+}
 
 // ---------------------------------------------------------------------------
 // LZString filter encoding
@@ -422,6 +444,7 @@ pub async fn fetch_search(
     http: &reqwest::Client,
     pairs: &[(&str, String)],
 ) -> Result<(u32, Vec<ProjectCard>), String> {
+    respect_crawl_delay().await;
     let d = build_d(pairs);
     let url = format!("{BASE}/project/");
     let resp = http
@@ -432,24 +455,35 @@ pub async fn fetch_search(
         .send()
         .await
         .map_err(|e| format!("request failed: {e}"))?;
+    let status = resp.status();
     let body = resp
         .text()
         .await
         .map_err(|e| format!("body read failed: {e}"))?;
+    parse_search_body(status, &body)
+}
 
-    if let Ok(v) = serde_json::from_str::<Value>(&body) {
+pub(crate) fn parse_search_body(
+    status: reqwest::StatusCode,
+    body: &str,
+) -> Result<(u32, Vec<ProjectCard>), String> {
+    if !status.is_success() {
+        return Err(format!("HTTP {status} for {BASE}/project/"));
+    }
+    if let Ok(v) = serde_json::from_str::<Value>(body) {
         let count = v.get("count").and_then(Value::as_u64).unwrap_or(0) as u32;
         let html = v.get("result").and_then(Value::as_str).unwrap_or_default();
         Ok((count, parse_cards(html)))
     } else {
         // SSR fallback: no count available; derive from pagination if present
-        let cards = parse_cards(&body);
+        let cards = parse_cards(body);
         Ok((cards.len() as u32, cards))
     }
 }
 
 /// Fetch a project detail page.
 pub async fn fetch_detail(http: &reqwest::Client, id: &str) -> Result<ProjectDetail, String> {
+    respect_crawl_delay().await;
     let url = format!("{BASE}/project/{id}/");
     let resp = http
         .get(&url)
@@ -620,5 +654,34 @@ mod tests {
             .skills
             .contains(&"flutter, rust, postgresql".to_string()));
         assert_eq!(d.card.comments.as_deref(), Some("3"));
+    }
+
+    #[test]
+    fn parse_search_body_rejects_http_error() {
+        let err = parse_search_body(reqwest::StatusCode::FORBIDDEN, "<html>denied</html>")
+            .expect_err("403");
+        assert!(err.contains("403"), "{err}");
+    }
+
+    #[test]
+    fn parse_search_body_reads_ajax_json() {
+        let body = r#"{"count": 2, "result": ""}"#;
+        let (count, cards) = parse_search_body(reqwest::StatusCode::OK, body).expect("ok json");
+        assert_eq!(count, 2);
+        assert!(cards.is_empty());
+    }
+
+    #[test]
+    fn crawl_delay_remaining() {
+        let t0 = Instant::now();
+        assert_eq!(remaining_crawl_delay(None, t0), Duration::ZERO);
+        assert_eq!(
+            remaining_crawl_delay(Some(t0), t0 + Duration::from_secs(1)),
+            Duration::from_secs(4)
+        );
+        assert_eq!(
+            remaining_crawl_delay(Some(t0), t0 + Duration::from_secs(6)),
+            Duration::ZERO
+        );
     }
 }

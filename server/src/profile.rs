@@ -48,9 +48,7 @@ pub struct MatchResult {
 fn expand_tilde(p: &std::path::Path) -> PathBuf {
     if let Some(p_str) = p.to_str() {
         if let Some(stripped) = p_str.strip_prefix("~/") {
-            if let Some(home) = std::env::var_os("HOME") {
-                return PathBuf::from(home).join(stripped);
-            }
+            return crate::state::home_dir().join(stripped);
         }
     }
     p.to_path_buf()
@@ -63,7 +61,8 @@ pub fn profile_path() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
+    {
+        let home = crate::state::home_dir();
         let p1 = home.join(".wishket-radar").join("profile.yaml");
         if p1.is_file() {
             return Some(p1);
@@ -90,7 +89,10 @@ pub fn profile_path() -> Option<PathBuf> {
             return Some(p);
         }
     }
-    std::env::current_dir().ok().map(|d| d.join("profile.yaml"))
+    std::env::current_dir().ok().and_then(|d| {
+        let p = d.join("profile.yaml");
+        p.is_file().then_some(p)
+    })
 }
 
 pub fn load() -> Result<Profile, String> {
@@ -133,11 +135,41 @@ pub fn score(profile: &Profile, text: &str) -> MatchResult {
 }
 
 fn contains_ci(hay_lower: &str, needle: &str) -> bool {
+    if needle.is_empty() {
+        return false;
+    }
     if needle.chars().any(|c| c.is_ascii_alphabetic()) {
-        hay_lower.contains(&needle.to_lowercase())
+        ascii_word_contains(hay_lower, &needle.to_lowercase())
     } else {
         hay_lower.contains(needle)
     }
+}
+
+/// ASCII 키워드는 앞뒤가 단어 경계일 때만 히트. `go`가 `ongoing`에 매칭되지 않게 한다.
+fn ascii_word_contains(hay: &str, needle: &str) -> bool {
+    let mut from = 0;
+    while let Some(rel) = hay[from..].find(needle) {
+        let pos = from + rel;
+        let before_ok = pos == 0
+            || !hay[..pos]
+                .chars()
+                .next_back()
+                .is_some_and(|c| c.is_ascii_alphanumeric());
+        let after = pos + needle.len();
+        let after_ok = after >= hay.len()
+            || !hay[after..]
+                .chars()
+                .next()
+                .is_some_and(|c| c.is_ascii_alphanumeric());
+        if before_ok && after_ok {
+            return true;
+        }
+        from = pos + 1;
+        if from >= hay.len() {
+            break;
+        }
+    }
+    false
 }
 
 /// Match over a card: title + role + skills + location.
@@ -171,6 +203,21 @@ mod tests {
         // 대소문자 무시
         let m = score(&p, "RUST 전문가");
         assert_eq!(m.score, 75);
+        // 영문은 단어 경계: trust 안의 rust는 미스
+        let m = score(&p, "trust the process");
+        assert_eq!(m.score, 0);
+    }
+
+    #[test]
+    fn english_keyword_uses_word_boundary() {
+        let p: Profile = serde_yaml::from_str(
+            "skills:\n  - name: Go\n    keywords: [go, golang]\n    weight: 1\n",
+        )
+        .unwrap();
+        assert_eq!(score(&p, "go 백엔드").score, 100);
+        assert_eq!(score(&p, "golang api").score, 100);
+        assert_eq!(score(&p, "ongoing 리팩터").score, 0);
+        assert_eq!(score(&p, "cargo-go-cli").score, 100);
     }
 
     #[test]

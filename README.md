@@ -9,7 +9,7 @@
 위시켓(wishket.com) 프로젝트를 검색·분석하고 내 기술 프로필과 매칭하는 멀티호스트 에이전트 플러그인 (Claude Code · Codex · Antigravity · Hermes).
 
 - **Rust MCP 서버** (`wishket`): 위시켓 비공식 검색 API(리버스 엔지니어링) 호출, HTML/JSON-LD 파싱, 신규 diff 캐시, 결정론적 키워드 점수 계산
-- **스킬** `wishket-scout`: 스캔부터 후보 선별, 병렬 분석, 한국어 리포트 작성까지 전 과정을 조율
+- **스킬** `wishket-scout`: 신규 스캔, 후보 선별, 심층 분석, 한국어 리포트 작성까지 전 과정을 조율
 - **서브에이전트** `wishket-analyst`: 프로젝트 단건 심층 분석 (적합도 A/B/C)
 - **스킬** `wishket-scan` · `wishket-search` · `wishket-profile` · `wishket-onboard`: 문장 요청 시 자동 실행 (슬래시 커맨드 불필요)
 
@@ -30,7 +30,7 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 irm https://github.com/epicsagas/wishket-radar/releases/latest/download/install.ps1 | iex
 ```
 
-설치된 `wishket-mcp` 바이너리는 플러그인 래퍼(`scripts/wishket-mcp`)가 자동으로 찾는다. 이후 플러그인 설치 과정만 남는다. 소스에서 직접 설치할 때는 `cargo install wishket-mcp --git https://github.com/epicsagas/wishket-radar`도 가능하다.
+설치된 `wishket-mcp` 바이너리는 플러그인 래퍼(`scripts/wishket-mcp`, Windows는 `scripts/wishket-mcp.cmd`)가 자동으로 찾는다. 이후 플러그인 설치 과정만 남는다. 소스에서 직접 설치할 때는 `cargo install wishket-mcp --git https://github.com/epicsagas/wishket-radar`도 가능하다. Windows에서 MCP `command: sh`가 없으면 인스톨러가 PATH에 넣은 `wishket-mcp`를 쓴다.
 
 Rust 툴체인이 있다면 프리빌트 없이도 동작한다. 래퍼가 첫 실행 시 `cargo build --release`를 자동으로 수행하며, 첫 MCP 기동에 1분 가량 걸린다.
 
@@ -77,7 +77,8 @@ hermes plugins enable wishket-radar
 | 스킬 | 트리거 예시 | 동작 |
 |---|---|---|
 | `wishket-scan` | "위시켓 스캔", "새 프로젝트 있어?" | 마지막 스캔 이후 신규만 diff 조회 |
-| `wishket-search` | "위시켓 검색", "flutter 프로젝트 있어?" | 임시 검색 (캐시 기록 없음) |
+| `wishket-scout` | "위시켓 분석", "스카우트", "리포트 뽑아줘" | 신규 스캔 + 상위 후보 심층 분석 + 리포트 |
+| `wishket-search` | "위시켓 검색", "flutter 프로젝트 있어?", "외주 찾아줘" | 임시 검색 (캐시 기록 없음) |
 | `wishket-onboard` | "위시켓 세팅해줘" | 온보딩: 바이너리 점검/설치 + 프로필 설정 + 베이스라인 스캔 |
 | `wishket-profile` | "프로필 보여줘", "rust 가중치 올려" | `~/.wishket-radar/profile.yaml` 조회/편집 |
 
@@ -126,7 +127,7 @@ cargo test --manifest-path server/Cargo.toml    # LZString 왕복·파서 단위
 ## 주의 (법적 고지 포함, 사용 전 필독)
 
 - **위시켓 서비스약관 제10조**는 "프로젝트의 정보 및 파트너의 정보를 수집하기 위해 크롤링을 하는 행위"를 회원 의무 위반으로 금지하고, 같은 조에서 리버스 엔지니어링 금지를 명시한다. 제재는 서면경고, 이용 제한, 영구 정지 순으로 강화되며, 약관은 비회원을 이유로 한 면책 주장도 배제한다. 위시켓 회원(파트너) 계정으로 사용하면 계정 제재 위험이 있다. **본 플러그인은 개인적 검토 목적의 소량 조회 용도이며, 사용 책임은 이용자에게 있다.**
-- robots.txt는 `/project/` 크롤링을 허용(사이트맵 제공)하되 `Crawl-delay: 5`를 요구한다. 서버는 이를 준수한다 (요청 간 5초 지연, 순차 요청).
+- robots.txt는 `/project/` 크롤링을 허용(사이트맵 제공)하되 `Crawl-delay: 5`를 요구한다. 서버는 검색·상세를 포함한 모든 HTTP 요청 사이에 5초를 둔다.
 - 요청 UA는 `wishket-radar/<버전> (+repo)`로 정체성을 밝힌다. 로그인·인증 우회 없이 공개 페이지만 조회하며, 회원 전용 영역(`/partners/`, `/media/` 등 robots.txt 비허용 경로)은 호출하지 않는다.
 - 비공식 API 기반이므로 위시켓 측 변경에 깨질 수 있다 (SSR 폴백 내장).
 - 과도한 스캔 금지. 수집 데이터는 seen 캐시(90일)와 로컬 리포트뿐이며 재배포하지 않는다.

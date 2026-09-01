@@ -8,7 +8,7 @@
   },
   "homepage": "https://github.com/epicsagas/wishket-radar",
   "repository": "https://github.com/epicsagas/wishket-radar",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "keywords": [
     "wishket",
     "freelance",

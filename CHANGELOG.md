@@ -15,3 +15,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Multi-platform prebuilt binaries distribution via `cargo-dist` (macOS arm64/x86_64, Linux arm64/x86_64, Windows x64).
 - One-line installer scripts (`install.sh`, `install.ps1`).
 - Unified runtime and profile storage under `~/.wishket-radar/`.
+
+### Changed
+- Plugin manifests declare Apache-2.0 to match LICENSE.
+- wishket-scan vs wishket-scout trigger phrases no longer overlap.
+- `scan_new` / `search_projects` default to `development` and `web,pc,android,ios` on the server when omitted.
+- Crawl-delay (5s) applies to every Wishket HTTP call, including `get_project`.
+- English profile keywords match on word boundaries (`go` no longer hits `ongoing`).
+- Hermes `provides_skills` lists all five skills.
+
+### Fixed
+- Profile and state directories fall back to `USERPROFILE` when `HOME` is unset (Windows).
+- Search HTTP error bodies are not parsed as empty SSR pages.
+- `wishket-mcp --version` and `--help` print instead of opening stdio MCP.

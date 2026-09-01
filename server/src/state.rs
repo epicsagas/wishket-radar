@@ -3,6 +3,7 @@
 //! so it survives plugin updates.
 
 use std::collections::HashMap;
+use std::ffi::OsStr;
 use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -22,11 +23,24 @@ pub struct State {
     pub last_scan: Option<String>,
 }
 
+pub(crate) fn home_dir_from(home: Option<&OsStr>, userprofile: Option<&OsStr>) -> PathBuf {
+    home.or(userprofile)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."))
+}
+
+pub fn home_dir() -> PathBuf {
+    home_dir_from(
+        std::env::var_os("HOME").as_deref(),
+        std::env::var_os("USERPROFILE").as_deref(),
+    )
+}
+
 pub fn state_dir() -> PathBuf {
     std::env::var_os("WISHKET_STATE_DIR")
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            let home = PathBuf::from(std::env::var_os("HOME").unwrap_or_else(|| ".".into()));
+            let home = home_dir();
             let dir = home.join(".wishket-radar");
             // 1회 마이그레이션: 구 플러그인명 시절 상태를 옮겨 seen 캐시 유지
             let legacy = home.join(".wishket-agents");
@@ -133,6 +147,7 @@ fn parse_iso_epoch(s: &str) -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::ffi::OsStr;
 
     #[test]
     fn iso_epoch_roundtrip() {
@@ -165,5 +180,21 @@ mod tests {
         prune(&mut st);
         assert!(st.seen.contains_key("1"));
         assert!(!st.seen.contains_key("2"));
+    }
+
+    #[test]
+    fn home_dir_prefers_home_then_userprofile() {
+        assert_eq!(
+            home_dir_from(
+                Some(OsStr::new("/Users/a")),
+                Some(OsStr::new("C:\\Users\\a"))
+            ),
+            PathBuf::from("/Users/a")
+        );
+        assert_eq!(
+            home_dir_from(None, Some(OsStr::new("C:\\Users\\a"))),
+            PathBuf::from("C:\\Users\\a")
+        );
+        assert_eq!(home_dir_from(None, None), PathBuf::from("."));
     }
 }

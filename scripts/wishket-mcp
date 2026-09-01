@@ -6,6 +6,11 @@
 #   3. cargo build on first run (requires Rust toolchain)
 # cargo may live in ~/.cargo/bin (rustup) or ~/.local/share/mise/shims (mise) —
 # MCP-spawned processes get a minimal PATH, so cover both.
+# Windows MCP may set USERPROFILE but not HOME
+if [ -z "${HOME:-}" ] && [ -n "${USERPROFILE:-}" ]; then
+  HOME="$USERPROFILE"
+fi
+export HOME
 export PATH="$HOME/.cargo/bin:$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
 
 # hosts may pass "~" literally in WISHKET_PROFILE (agy mcp_config.json) — expand it

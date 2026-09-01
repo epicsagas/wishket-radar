@@ -16,7 +16,6 @@ use rmcp::transport::stdio;
 use rmcp::{tool_handler, tool_router, ErrorData as McpError, ServerHandler, ServiceExt};
 use serde::Deserialize;
 use serde_json::{json, Value};
-use tokio::time::sleep;
 
 use wishket::{fetch_detail, fetch_search, ProjectCard};
 
@@ -59,11 +58,18 @@ impl Wishket {
                 pairs.push((k.to_string(), v));
             }
         };
-        if let Some(c) = category {
+        let raw_has = |key: &str| -> bool {
+            matches!(raw, Some(Value::Object(map)) if map.contains_key(key))
+        };
+        if let Some(c) = category.filter(|s| !s.is_empty()) {
             push("c", c.to_string());
+        } else if !raw_has("c") {
+            push("c", "development".into());
         }
-        if let Some(f) = form_factors {
+        if let Some(f) = form_factors.filter(|s| !s.is_empty()) {
             push("ff", f.replace(' ', ""));
+        } else if !raw_has("ff") {
+            push("ff", "web,pc,android,ios".into());
         }
         if let Some(s) = keyword {
             push("s", s.to_string());
@@ -109,9 +115,6 @@ impl Wishket {
                 total = count;
             }
             cards.append(&mut batch);
-            if p < max_pages {
-                sleep(Duration::from_millis(wishket::REQUEST_DELAY_MS)).await;
-            }
         }
         Ok((total, cards))
     }
@@ -291,7 +294,7 @@ struct SearchParams {
     /// 카테고리: development / design / planning / marketing / etc (기본 development)
     #[serde(default)]
     category: Option<String>,
-    /// 형태 콤마결합: "web,pc,android,ios" (기본 web,pc,android,ios는 명시 필요)
+    /// 형태 콤마결합. 생략 시 web,pc,android,ios
     #[serde(default)]
     form_factors: Option<String>,
     /// 키워드 검색어
@@ -327,9 +330,80 @@ struct DetailParams {
 #[tool_handler(name = "wishket-mcp", version = "0.1.0")]
 impl ServerHandler for Wishket {}
 
+fn cli_output(arg: Option<&str>) -> Option<String> {
+    match arg {
+        Some("--version") | Some("-V") => {
+            Some(format!("wishket-mcp {}", env!("CARGO_PKG_VERSION")))
+        }
+        Some("--help") | Some("-h") => Some(
+            "wishket-mcp: MCP server (stdio)\n  --version, -V  Print version\n  --help, -h     Print help"
+                .into(),
+        ),
+        _ => None,
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(msg) = cli_output(std::env::args().nth(1).as_deref()) {
+        println!("{msg}");
+        return Ok(());
+    }
     let service = Wishket::new().serve(stdio()).await?;
     service.waiting().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn filter_pairs_applies_documented_defaults() {
+        let pairs = Wishket::filter_pairs(None, None, None, None, None);
+        assert!(
+            pairs.iter().any(|(k, v)| k == "c" && v == "development"),
+            "default category: {pairs:?}"
+        );
+        assert!(
+            pairs
+                .iter()
+                .any(|(k, v)| k == "ff" && v == "web,pc,android,ios"),
+            "default form_factors: {pairs:?}"
+        );
+    }
+
+    #[test]
+    fn filter_pairs_explicit_overrides_defaults() {
+        let pairs =
+            Wishket::filter_pairs(Some("design"), Some("web"), Some("flutter"), None, Some(2));
+        assert!(pairs.iter().any(|(k, v)| k == "c" && v == "design"));
+        assert!(pairs.iter().any(|(k, v)| k == "ff" && v == "web"));
+        assert!(pairs.iter().any(|(k, v)| k == "s" && v == "flutter"));
+        assert!(pairs.iter().any(|(k, v)| k == "page" && v == "2"));
+        assert!(!pairs.iter().any(|(k, v)| k == "c" && v == "development"));
+    }
+
+    #[test]
+    fn filter_pairs_raw_c_skips_default_category() {
+        let raw = json!({ "c": "design" });
+        let pairs = Wishket::filter_pairs(None, None, None, Some(&raw), None);
+        let c_vals: Vec<_> = pairs
+            .iter()
+            .filter(|(k, _)| k == "c")
+            .map(|(_, v)| v.as_str())
+            .collect();
+        assert_eq!(c_vals, vec!["design"]);
+    }
+
+    #[test]
+    fn cli_version_and_help() {
+        let v = cli_output(Some("--version")).expect("version");
+        assert!(v.contains(env!("CARGO_PKG_VERSION")), "{v}");
+        assert_eq!(cli_output(Some("-V")), cli_output(Some("--version")));
+        let h = cli_output(Some("--help")).expect("help");
+        assert!(h.contains("stdio"), "{h}");
+        assert!(cli_output(None).is_none());
+        assert!(cli_output(Some("serve")).is_none());
+    }
 }

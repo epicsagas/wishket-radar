@@ -1,6 +1,6 @@
 ---
 name: wishket-scout
-description: 위시켓(wishket.com) 프로젝트 스캔·분석·기술 매칭 오케스트레이션. scan_new MCP 도구로 신규 프로젝트만 조회하고, 상위 후보를 wishket-analyst 서브에이전트로 병렬 분석해 한국어 리포트를 작성한다. "위시켓 스캔", "새 프로젝트 있어?", "외주 찾아줘", "wishket scan" 등에 사용.
+description: 위시켓 신규 공고 심층 분석·리포트. scan_new로 신규를 조회한 뒤 상위 후보를 wishket-analyst로 분석해 한국어 리포트를 작성한다. "위시켓 분석", "스카우트", "리포트 뽑아줘", "심층 분석해줘" 등에 사용. 목록만 보려면 wishket-scan.
 ---
 
 # wishket-scout — 위시켓 프로젝트 스카우트
@@ -12,18 +12,14 @@ flowchart LR
     A[scan_new MCP 호출] --> B{신규 있음?}
     B -- 없음 --> Z[요약만 응답]
     B -- 있음 --> C[점수 상위 N개 선별]
-    C --> D[wishket-analyst 병렬 분석]
-    D --> E[한국어 리포트 조립]
+    C --> D[get_project 순차]
+    D --> E[wishket-analyst]
     E --> F[reports/ 저장 + 채팅 요약]
 ```
 
 ## 1단계: 스캔
 
-MCP 도구 `wishket` 서버의 `scan_new` 호출. 인자 없이 호출하면 기본 필터(전달받은 인자가 있으면 그것 사용):
-
-```
-scan_new(category="development", form_factors="web,pc,android,ios", max_pages=3)
-```
+MCP 도구 `wishket` 서버의 `scan_new` 호출. 인자를 생략해도 서버가 `category=development`, `form_factors=web,pc,android,ios`, `max_pages=3`을 넣는다. 사용자가 지정한 값이 있으면 그걸 쓴다.
 
 - 사용자가 키워드를 지정했으면 `keyword` 추가.
 - 첫 실행(`baseline: true`)이면 모든 항목이 신규인 것이 정상. 리포트에 "베이스라인 스캔" 표시.
@@ -38,12 +34,12 @@ scan_new(category="development", form_factors="web,pc,android,ios", max_pages=3)
 - score가 낮아도 제목에 명시적 키워드(예: rust, flutter, llm)가 있으면 포함.
 - 분석 대상은 최대 5개. 나머지는 리포트 말미에 표로 간단 나열.
 
-## 3단계: 상세 분석 (병렬)
+## 3단계: 상세 분석
 
-각 후보에 대해 `get_project(id)`로 상세(JSON-LD 전체 설명 포함)를 가져운 뒤, **Agent 도구로 `wishket-analyst` 서브에이전트를 후보별로 동시 디스패치** (한 메시지에 여러 Agent 호출).
+각 후보에 대해 `get_project(id)`로 상세(JSON-LD 전체 설명 포함)를 **순차** 조회한다. 서버가 요청 사이 robots Crawl-delay 5초를 지키므로 `get_project`를 병렬 호출하지 않는다. 상세를 모은 뒤 `wishket-analyst` 서브에이전트는 후보별로 동시에 디스패치해도 된다.
 
-- 서브에이전트 프롬프트: get_project 결과 JSON 전체 + 사용자 프로필 요약(아래 기준값).
-- 프로필 요약 기준: `profile.yaml` 내용. 모르면 이 기본값 사용 — "Rust 주력, Svelte+TS, PostgreSQL, Tauri, Flutter, AWS, AI/임베딩(Rust 선호/Python 가능), 원격 우선/서울 출근 가능".
+- 서브에이전트 프롬프트: get_project 결과 JSON 전체 + 사용자 프로필 요약.
+- 프로필 요약: `~/.wishket-radar/profile.yaml` (`WISHKET_PROFILE`이 있으면 그 경로)을 Read로 읽는다. 파일이 없으면 스택을 지어내지 말고, 프로필 없음과 wishket-onboard 안내를 적고 analyst에는 "프로필 없음"만 넘긴다.
 
 ## 4단계: 리포트
 
@@ -87,6 +83,6 @@ scan_new(category="development", form_factors="web,pc,android,ios", max_pages=3)
 
 ## 유지
 
-- 스캔 기준 갱신: 사용자가 "매칭 기준 바꿔줘" 하면 `profile.yaml` 편집 (`/wishket-profile` 커맨드 안내).
+- 스캔 기준 갱신: 사용자가 "매칭 기준 바꿔줘" 하면 wishket-profile로 `profile.yaml`을 편집한다.
 - 캐시 리셋: `reset_cache` MCP 도구. 다음 스캔이 베이스라인이 됨.
 - 필터 확인: `list_filters` 도구. 검증된 키(c/ff/page/s) 외에는 raw로만 전달.

@@ -11,3 +11,7 @@ author:
 # this list documents them so forge doctor can verify the bundle.
 provides_skills:
   - wishket-scout
+  - wishket-scan
+  - wishket-search
+  - wishket-profile
+  - wishket-onboard

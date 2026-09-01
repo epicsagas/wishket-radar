@@ -1,8 +1,8 @@
-"""wishket-agents — Hermes plugin entry point.
+"""wishket-radar — Hermes plugin entry point.
 
-Hermes loads this module from ~/.hermes/plugins/wishket-agents/ and calls
+Hermes loads this module from ~/.hermes/plugins/wishket-radar/ and calls
 register(ctx) once at startup. Bundled skills under skills/ are
-registered here so the agent can load them via skill_view("wishket-agents:<skill>").
+registered here so the agent can load them via skill_view("wishket-radar:<skill>").
 """
 from pathlib import Path
 
