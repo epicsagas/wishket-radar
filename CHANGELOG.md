@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-09-01
+
+### Fixed
+- 상세 페이지(get_project)에서 `private_matching`이 누락되던 버그. 상세 페이지엔 카드 DOM(`project-info-box`)이 없어 `parse_cards`가 폴백되는데, 뱃지를 문서 레벨(`div.status-mark.private-mark`)에서 재확인하도록 수정.
+
+## [0.1.1] - 2026-09-01
+
 ### Added
 - `ProjectCard.private_matching` — 프라이빗 매칭(부스트 파트너 전용) 뱃지 여부. scan/search/get_project 모든 카드 출력에 노출.
 

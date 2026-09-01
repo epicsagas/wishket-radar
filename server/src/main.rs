@@ -327,7 +327,7 @@ struct DetailParams {
     id: String,
 }
 
-#[tool_handler(name = "wishket-mcp", version = "0.1.1")]
+#[tool_handler(name = "wishket-mcp", version = "0.1.2")]
 impl ServerHandler for Wishket {}
 
 fn cli_output(arg: Option<&str>) -> Option<String> {

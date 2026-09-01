@@ -17,7 +17,7 @@ use tokio::time::sleep;
 pub const BASE: &str = "https://www.wishket.com";
 /// 정체성을 밝히는 봇 UA. 위시켓은 UA 기반 차단을 하지 않고(nginx, 200 OK 확인) —
 /// 브라우저 위장보다 연락처가 드러나는 쪽이 방어 가능하다.
-pub const UA: &str = "wishket-radar/0.1.1 (+https://github.com/epicsagas/wishket-radar)";
+pub const UA: &str = "wishket-radar/0.1.2 (+https://github.com/epicsagas/wishket-radar)";
 
 /// Inter-request delay. robots.txt Crawl-delay: 5 준수.
 pub const REQUEST_DELAY_MS: u64 = 5000;
@@ -392,6 +392,12 @@ pub fn parse_detail(id: &str, html: &str) -> ProjectDetail {
         card.comments = first_text(&doc, "span.comment-layer-count");
     }
 
+    // 상세 페이지엔 카드 DOM(project-info-box)이 없어 parse_cards가 폴백됨 —
+    // 프라이빗 매칭 뱃지는 문서 레벨(div.status-guide)에서 재확인
+    if card.private_matching.is_none() {
+        card.private_matching = Some(doc.select(&sel("div.status-mark.private-mark")).next().is_some());
+    }
+
     let salary = jp
         .as_ref()
         .and_then(|j| j.base_salary.as_ref().and_then(salary_to_string));
@@ -688,6 +694,31 @@ mod tests {
             .skills
             .contains(&"flutter, rust, postgresql".to_string()));
         assert_eq!(d.card.comments.as_deref(), Some("3"));
+    }
+
+    /// 실제 프라이빗 프로젝트 상세 페이지(project/158092) 구조:
+    /// project-info-box 카드 DOM 없이 status-guide 안에 뱃지가 렌더링됨.
+    #[test]
+    fn parses_detail_private_matching_without_card_dom() {
+        let html = r#"
+        <html><body>
+        <section class="detail-section"><div class="project-section">
+          <div class="project-content-layer mb24"><div class="project-content-title">
+            <div class="status-guide mb8"><div class="project-status-label recruiting-status">
+              <div class="status-mark private-mark">프라이빗 매칭
+                <div class="status-mark-tooltip">PRIME·PRO·BOOST 파트너에게만<br/>공개되는 비공개 프로젝트입니다.</div>
+              </div>
+              <div class="status-mark recruiting-mark">모집 중</div>
+            </div></div>
+          </div></div>
+        </div></section>
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"JobPosting","title":"사내 시스템 재구축"}
+        </script>
+        </body></html>"#;
+        let d = parse_detail("158092", html);
+        assert_eq!(d.card.private_matching, Some(true));
+        assert_eq!(d.card.title, "사내 시스템 재구축");
     }
 
     #[test]
