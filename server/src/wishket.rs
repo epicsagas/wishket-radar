@@ -17,7 +17,7 @@ use tokio::time::sleep;
 pub const BASE: &str = "https://www.wishket.com";
 /// 정체성을 밝히는 봇 UA. 위시켓은 UA 기반 차단을 하지 않고(nginx, 200 OK 확인) —
 /// 브라우저 위장보다 연락처가 드러나는 쪽이 방어 가능하다.
-pub const UA: &str = "wishket-radar/0.1.0 (+https://github.com/epicsagas/wishket-radar)";
+pub const UA: &str = "wishket-radar/0.1.1 (+https://github.com/epicsagas/wishket-radar)";
 
 /// Inter-request delay. robots.txt Crawl-delay: 5 준수.
 pub const REQUEST_DELAY_MS: u64 = 5000;
@@ -81,6 +81,10 @@ pub struct ProjectCard {
     /// e.g. "모집 중"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
+    /// 프라이빗 매칭 뱃지 — PRIME·PRO·BOOST 파트너 전용 비공개 프로젝트.
+    // ponytail: bool로만 노출. 등급 목록(PRIME·PRO·BOOST 등)이 프로젝트별로 갈리면 툴팁 텍스트로 확장.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub private_matching: Option<bool>,
     /// e.g. "월 금액 7,000,000원 /월" or "협의 후 결정"
     #[serde(skip_serializing_if = "Option::is_none")]
     pub budget: Option<String>,
@@ -186,6 +190,7 @@ pub fn parse_cards(html: &str) -> Vec<ProjectCard> {
     let role = sel("p.project-category-or-role");
     let level = sel("p.project-level");
     let work_type = sel("div.status-mark.project-type-mark");
+    let private_mark = sel("div.status-mark.private-mark");
     let skill_chip = sel("div.project-skills-info span.skill-chip");
     let location = sel("p.location-data");
     let posted = sel("p.start-recruitment-data");
@@ -248,6 +253,7 @@ pub fn parse_cards(html: &str) -> Vec<ProjectCard> {
                 .select(&sel("div.status-mark.recruiting-mark"))
                 .next()
                 .map(text_of),
+            private_matching: Some(card.select(&private_mark).next().is_some()),
             budget: card.select(&budget).next().map(text_of),
             duration: card
                 .select(&term)
@@ -619,6 +625,34 @@ mod tests {
         assert_eq!(c.client.as_ref().unwrap().name.as_deref(), Some("to******"));
         assert_eq!(c.client.as_ref().unwrap().rating.as_deref(), Some("3.7"));
         assert_eq!(c.client.as_ref().unwrap().verified, Some(true));
+        assert_eq!(c.private_matching, Some(false));
+    }
+
+    /// 실제 부스트 파트너 전용(프라이빗 매칭) 카드 마크업 (project/158092).
+    #[test]
+    fn parses_private_matching_badge() {
+        let html = r#"
+        <div class="project-info-box"><div class="project-info-box-wrapper">
+        <section class="project-organic-info">
+          <div class="project-status-label recruiting-status mb12">
+            <div class="status-mark private-mark">
+              프라이빗 매칭
+              <div class="status-mark-tooltip">
+                <img class="tooltip-arrow" src="/x.svg"/>
+                PRIME·PRO·BOOST 파트너에게만<br/>공개되는 비공개 프로젝트입니다.
+              </div>
+            </div>
+            <div class="status-mark recruiting-mark">모집 중</div>
+            <div class="status-mark new-mark">NEW</div>
+          </div>
+          <a class="subtitle-2-medium project-link" href="/project/158092/"><p class="subtitle-1-half-medium mb10">Flutter 기반 프라이빗 프로젝트</p></a>
+        </section>
+        </div></div>"#;
+        let cards = parse_cards(html);
+        assert_eq!(cards.len(), 1);
+        assert_eq!(cards[0].private_matching, Some(true));
+        // 툴팁 텍스트가 title 등 다른 필드로 새지 않는지
+        assert_eq!(cards[0].status.as_deref(), Some("모집 중"));
     }
 
     #[test]
