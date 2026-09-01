@@ -93,7 +93,9 @@ fn civil_from_days(z: i64) -> (i64, u32, u32) {
 pub fn prune(state: &mut State) {
     let cutoff = now_epoch() - PRUNE_DAYS * 86400;
     state.seen.retain(|_, e| {
-        parse_iso_epoch(&e.first_seen).map(|t| t >= cutoff).unwrap_or(true)
+        parse_iso_epoch(&e.first_seen)
+            .map(|t| t >= cutoff)
+            .unwrap_or(true)
     });
 }
 
@@ -135,8 +137,11 @@ mod tests {
     #[test]
     fn iso_epoch_roundtrip() {
         let s = now_iso();
-        assert_eq!(parse_iso_epoch(&s).is_some(), true);
-        assert_eq!(parse_iso_epoch("2026-08-31T18:00:00+09:00"), Some(1788166800));
+        assert!(parse_iso_epoch(&s).is_some());
+        assert_eq!(
+            parse_iso_epoch("2026-08-31T18:00:00+09:00"),
+            Some(1788166800)
+        );
     }
 
     #[test]
@@ -145,11 +150,17 @@ mod tests {
         let recent = now_iso();
         st.seen.insert(
             "1".into(),
-            SeenEntry { first_seen: recent.clone(), title: "t".into() },
+            SeenEntry {
+                first_seen: recent.clone(),
+                title: "t".into(),
+            },
         );
         st.seen.insert(
             "2".into(),
-            SeenEntry { first_seen: "2020-01-01T00:00:00+09:00".into(), title: "old".into() },
+            SeenEntry {
+                first_seen: "2020-01-01T00:00:00+09:00".into(),
+                title: "old".into(),
+            },
         );
         prune(&mut st);
         assert!(st.seen.contains_key("1"));

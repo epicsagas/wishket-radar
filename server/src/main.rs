@@ -97,8 +97,10 @@ impl Wishket {
             if p > 1 {
                 page_pairs.push(("page".into(), p.to_string()));
             }
-            let refs: Vec<(&str, String)> =
-                page_pairs.iter().map(|(k, v)| (k.as_str(), v.clone())).collect();
+            let refs: Vec<(&str, String)> = page_pairs
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.clone()))
+                .collect();
             let (count, mut batch) = fetch_search(&self.http, &refs).await?;
             if batch.is_empty() {
                 break;
@@ -136,7 +138,9 @@ impl Wishket {
         }})
     }
 
-    #[tool(description = "위시켓 프로젝트 검색 (캐시 기록 없음, 순수 조회). 페이지당 10건. 기본 카테고리 development.")]
+    #[tool(
+        description = "위시켓 프로젝트 검색 (캐시 기록 없음, 순수 조회). 페이지당 10건. 기본 카테고리 development."
+    )]
     async fn search_projects(
         &self,
         Parameters(p): Parameters<SearchParams>,
@@ -161,7 +165,9 @@ impl Wishket {
         })))
     }
 
-    #[tool(description = "마지막 스캔 이후 신규 프로젝트만 반환 (신규는 seen 캐시에 기록). 기본 최대 3페이지(30건) 조회, 요청 간 5초 지연 (robots Crawl-delay). 첫 실행은 전체가 신규(베이스라인).")]
+    #[tool(
+        description = "마지막 스캔 이후 신규 프로젝트만 반환 (신규는 seen 캐시에 기록). 기본 최대 3페이지(30건) 조회, 요청 간 5초 지연 (robots Crawl-delay). 첫 실행은 전체가 신규(베이스라인)."
+    )]
     async fn scan_new(
         &self,
         Parameters(p): Parameters<ScanParams>,
@@ -206,8 +212,18 @@ impl Wishket {
         drop(card_refs);
         // 점수 내림차순
         cards.sort_by(|a, b| {
-            let sa = a.r#match.as_ref().and_then(|m| m.get("score")).and_then(Value::as_u64).unwrap_or(0);
-            let sb = b.r#match.as_ref().and_then(|m| m.get("score")).and_then(Value::as_u64).unwrap_or(0);
+            let sa = a
+                .r#match
+                .as_ref()
+                .and_then(|m| m.get("score"))
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let sb = b
+                .r#match
+                .as_ref()
+                .and_then(|m| m.get("score"))
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
             sb.cmp(&sa)
         });
 
@@ -224,12 +240,20 @@ impl Wishket {
         })))
     }
 
-    #[tool(description = "프로젝트 상세 조회 (JSON-LD 전체 설명 포함). id는 숫자 문자열 (예: \"158063\").")]
+    #[tool(
+        description = "프로젝트 상세 조회 (JSON-LD 전체 설명 포함). id는 숫자 문자열 (예: \"158063\")."
+    )]
     async fn get_project(
         &self,
         Parameters(p): Parameters<DetailParams>,
     ) -> Result<CallToolResult, McpError> {
-        let id = p.id.trim().trim_matches('/').rsplit('/').next().unwrap_or("").to_string();
+        let id =
+            p.id.trim()
+                .trim_matches('/')
+                .rsplit('/')
+                .next()
+                .unwrap_or("")
+                .to_string();
         if id.is_empty() || !id.chars().all(|c| c.is_ascii_digit()) {
             return Err(McpError::invalid_params(
                 format!("invalid project id: {:?}", p.id),
@@ -244,7 +268,9 @@ impl Wishket {
         })))
     }
 
-    #[tool(description = "사용 가능한 검색 필터 키와 값 목록. verified_keys만 의미가 확인됨. unverified_keys는 raw 파라미터로 실험적 사용.")]
+    #[tool(
+        description = "사용 가능한 검색 필터 키와 값 목록. verified_keys만 의미가 확인됨. unverified_keys는 raw 파라미터로 실험적 사용."
+    )]
     async fn list_filters(&self) -> Result<CallToolResult, McpError> {
         Ok(json_result(wishket::filter_docs()))
     }

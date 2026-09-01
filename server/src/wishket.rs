@@ -32,6 +32,7 @@ pub fn build_d(pairs: &[(&str, String)]) -> String {
     lz_str::compress_to_base64(&q)
 }
 
+#[allow(dead_code)]
 fn decompress_d(d: &str) -> Option<String> {
     lz_str::decompress_from_base64(d).and_then(|v| String::from_utf16(&v).ok())
 }
@@ -146,6 +147,7 @@ fn label_value(text: String, label: &str) -> String {
     }
 }
 
+#[allow(dead_code)]
 fn texts_of(doc: &Html, css: &str) -> Vec<String> {
     doc.select(&sel(css)).map(text_of).collect()
 }
@@ -220,21 +222,28 @@ pub fn parse_cards(html: &str) -> Vec<ProjectCard> {
             url: format!("{BASE}/project/{id}/"),
             id,
             title,
-            status: card.select(&sel("div.status-mark.recruiting-mark")).next().map(text_of),
+            status: card
+                .select(&sel("div.status-mark.recruiting-mark"))
+                .next()
+                .map(text_of),
             budget: card.select(&budget).next().map(text_of),
-            duration: card.select(&term).next().map(|el| label_value(text_of(el), "예상 기간")),
-            start_date: card.select(&launch).next().map(|el| label_value(text_of(el), "근무 시작일")),
+            duration: card
+                .select(&term)
+                .next()
+                .map(|el| label_value(text_of(el), "예상 기간")),
+            start_date: card
+                .select(&launch)
+                .next()
+                .map(|el| label_value(text_of(el), "근무 시작일")),
             role: card.select(&role).next().map(text_of),
             level: card.select(&level).next().map(text_of),
             work_type: card.select(&work_type).next().map(text_of),
             skills,
             location: card.select(&location).next().map(text_of),
-            posted_at: card.select(&posted).next().map(|el| {
-                text_of(el)
-                    .trim_start_matches("·")
-                    .trim_start()
-                    .to_string()
-            }),
+            posted_at: card
+                .select(&posted)
+                .next()
+                .map(|el| text_of(el).trim_start_matches("·").trim_start().to_string()),
             deadline,
             applicants,
             views: card
@@ -270,6 +279,7 @@ fn decode_entities(s: &str) -> String {
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)]
 struct JobPosting {
     #[serde(default)]
     title: Option<String>,
@@ -335,7 +345,10 @@ pub fn parse_detail(id: &str, html: &str) -> ProjectDetail {
         .unwrap_or_else(|| ProjectCard {
             id: id.to_string(),
             url: format!("{BASE}/project/{id}/"),
-            title: jp.as_ref().and_then(|j| j.title.clone()).unwrap_or_default(),
+            title: jp
+                .as_ref()
+                .and_then(|j| j.title.clone())
+                .unwrap_or_default(),
             ..Default::default()
         });
     // 상세 설명까지 매칭 텍스트로 쓸 수 있게 skills 보강
@@ -351,11 +364,9 @@ pub fn parse_detail(id: &str, html: &str) -> ProjectDetail {
         card.comments = first_text(&doc, "span.comment-layer-count");
     }
 
-    let salary = jp.as_ref().and_then(|j| {
-        j.base_salary
-            .as_ref()
-            .and_then(|v| salary_to_string(v))
-    });
+    let salary = jp
+        .as_ref()
+        .and_then(|j| j.base_salary.as_ref().and_then(salary_to_string));
 
     ProjectDetail {
         card,
@@ -421,14 +432,14 @@ pub async fn fetch_search(
         .send()
         .await
         .map_err(|e| format!("request failed: {e}"))?;
-    let body = resp.text().await.map_err(|e| format!("body read failed: {e}"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("body read failed: {e}"))?;
 
     if let Ok(v) = serde_json::from_str::<Value>(&body) {
         let count = v.get("count").and_then(Value::as_u64).unwrap_or(0) as u32;
-        let html = v
-            .get("result")
-            .and_then(Value::as_str)
-            .unwrap_or_default();
+        let html = v.get("result").and_then(Value::as_str).unwrap_or_default();
         Ok((count, parse_cards(html)))
     } else {
         // SSR fallback: no count available; derive from pagination if present
@@ -438,10 +449,7 @@ pub async fn fetch_search(
 }
 
 /// Fetch a project detail page.
-pub async fn fetch_detail(
-    http: &reqwest::Client,
-    id: &str,
-) -> Result<ProjectDetail, String> {
+pub async fn fetch_detail(http: &reqwest::Client, id: &str) -> Result<ProjectDetail, String> {
     let url = format!("{BASE}/project/{id}/");
     let resp = http
         .get(&url)
@@ -450,7 +458,10 @@ pub async fn fetch_detail(
         .await
         .map_err(|e| format!("request failed: {e}"))?;
     let status = resp.status();
-    let body = resp.text().await.map_err(|e| format!("body read failed: {e}"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|e| format!("body read failed: {e}"))?;
     if !status.is_success() {
         return Err(format!("HTTP {status} for {url}"));
     }
@@ -488,8 +499,7 @@ mod tests {
     use super::*;
 
     /// Known vector: the `d=` param from a real wishket URL the user shared.
-    const KNOWN_D: &str =
-        "MYXgJgpgbhA2D2AHAthAdgFwGQDMcgHcIAjAGkWFIEM0wAneASzFMfgGcg==";
+    const KNOWN_D: &str = "MYXgJgpgbhA2D2AHAthAdgFwGQDMcgHcIAjAGkWFIEM0wAneASzFMfgGcg==";
     const KNOWN_FILTER: &str = "c=development&ff=web,pc,android,ios";
 
     #[test]
@@ -498,7 +508,10 @@ mod tests {
         assert_eq!(dec, KNOWN_FILTER);
         // lz-str의 base64 패딩이 원본과 자릿수가 다를 수 있으므로 바이트 동등성 대신
         // 재압축 결과가 다시 원본 필터로 풀리는지(의미 동등)로 게이트한다.
-        let d = build_d(&[("c", "development".into()), ("ff", "web,pc,android,ios".into())]);
+        let d = build_d(&[
+            ("c", "development".into()),
+            ("ff", "web,pc,android,ios".into()),
+        ]);
         assert_eq!(decompress_d(&d).as_deref(), Some(KNOWN_FILTER));
     }
 
@@ -550,7 +563,10 @@ mod tests {
         assert_eq!(cards.len(), 1);
         let c = &cards[0];
         assert_eq!(c.id, "157463");
-        assert_eq!(c.title, "Databricks 기반 데이터 플랫폼 구축 데이터 엔지니어");
+        assert_eq!(
+            c.title,
+            "Databricks 기반 데이터 플랫폼 구축 데이터 엔지니어"
+        );
         assert_eq!(c.url, "https://www.wishket.com/project/157463/");
         assert_eq!(c.status.as_deref(), Some("모집 중"));
         assert_eq!(c.budget.as_deref(), Some("월 금액 7,000,000원 /월"));
@@ -595,8 +611,14 @@ mod tests {
         assert_eq!(d.valid_through.as_deref(), Some("2026-09-07T23:59"));
         assert_eq!(d.salary.as_deref(), Some("2,000만원 (부가세 별도)"));
         assert_eq!(d.conditions.len(), 2);
-        assert_eq!(d.conditions[0], ("예상 기간".to_string(), "30일".to_string()));
-        assert!(d.card.skills.contains(&"flutter, rust, postgresql".to_string()));
+        assert_eq!(
+            d.conditions[0],
+            ("예상 기간".to_string(), "30일".to_string())
+        );
+        assert!(d
+            .card
+            .skills
+            .contains(&"flutter, rust, postgresql".to_string()));
         assert_eq!(d.card.comments.as_deref(), Some("3"));
     }
 }

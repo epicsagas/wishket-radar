@@ -24,6 +24,7 @@ fn default_weight() -> u32 {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[allow(dead_code)]
 pub struct Profile {
     #[serde(default)]
     pub name: Option<String>,
@@ -96,8 +97,8 @@ pub fn load() -> Result<Profile, String> {
     let Some(path) = profile_path() else {
         return Err("profile.yaml not found (set WISHKET_PROFILE)".into());
     };
-    let raw = std::fs::read_to_string(&path)
-        .map_err(|e| format!("read {}: {e}", path.display()))?;
+    let raw =
+        std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
     serde_yaml::from_str(&raw).map_err(|e| format!("parse {}: {e}", path.display()))
 }
 
@@ -123,12 +124,12 @@ pub fn score(profile: &Profile, text: &str) -> MatchResult {
             missing.push(s.name.clone());
         }
     }
-    let score = if total_w == 0 {
-        0
-    } else {
-        ((matched_w * 100) / total_w) as u32
-    };
-    MatchResult { score, matched, missing }
+    let score = (matched_w * 100).checked_div(total_w).unwrap_or(0) as u32;
+    MatchResult {
+        score,
+        matched,
+        missing,
+    }
 }
 
 fn contains_ci(hay_lower: &str, needle: &str) -> bool {
