@@ -204,5 +204,6 @@ $RECYCLE.BIN/
 # End of https://www.toptal.com/developers/gitignore/api/windows,linux,macos,dotenv,intellij+all,visualstudiocode,rust
 
 # Personal matching profile — keep only profile.example.yaml in the repo
-/profile.yaml
+profile.yaml
+profile.md
 !/profile.example.yaml
