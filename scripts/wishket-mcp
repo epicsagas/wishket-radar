@@ -1,0 +1,35 @@
+#!/bin/sh
+# wishket MCP server launcher.
+# Resolution order:
+#   1. local release binary (dev checkout)
+#   2. wishket-mcp on PATH (install.sh / cargo-dist installer — no Rust needed)
+#   3. cargo build on first run (requires Rust toolchain)
+# cargo may live in ~/.cargo/bin (rustup) or ~/.local/share/mise/shims (mise) —
+# MCP-spawned processes get a minimal PATH, so cover both.
+export PATH="$HOME/.cargo/bin:$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
+
+# hosts may pass "~" literally in WISHKET_PROFILE (agy mcp_config.json) — expand it
+case "${WISHKET_PROFILE-}" in
+  "~"*) WISHKET_PROFILE="$HOME${WISHKET_PROFILE#\~}" ;;
+esac
+export WISHKET_PROFILE
+
+PLUGIN_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
+BIN="$PLUGIN_ROOT/server/target/release/wishket-mcp"
+
+if [ -x "$BIN" ]; then
+  exec "$BIN"
+fi
+
+if command -v wishket-mcp >/dev/null 2>&1; then
+  exec wishket-mcp
+fi
+
+if command -v cargo >/dev/null 2>&1; then
+  cargo build --release --manifest-path "$PLUGIN_ROOT/server/Cargo.toml" >&2 || exit 1
+  exec "$BIN"
+fi
+
+echo "wishket-mcp not found and no Rust toolchain. Install the prebuilt binary:" >&2
+echo "  curl --proto '=https' --tlsv1.2 -LsSf https://github.com/epicsagas/wishket-radar/releases/latest/download/install.sh | sh" >&2
+exit 1

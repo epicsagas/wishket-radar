@@ -1,0 +1,31 @@
+# 위시켓 프로젝트 매칭용 기술 프로필 예시
+# 사용: cp profile.example.yaml ~/.wishket/profile.yaml
+# 실제 프로필(profile.yaml)은 gitignore 대상이며 저장소에 커밋하지 않는다.
+# weight: 상대적 중요도. score = 100 * 매칭 weight 합 / 전체 weight 합.
+
+name: example-dev
+headline: Backend · cloud · data (edit this)
+
+skills:
+  - name: Rust
+    keywords: [rust, 러스트, cargo, axum, tokio]
+    weight: 3
+  - name: Go
+    keywords: [go, golang, 고랭, gin, gorm, grpc]
+    weight: 2
+  - name: TypeScript
+    keywords: [typescript, react, node.js, nodejs]
+    weight: 2
+  - name: AWS/DevOps
+    keywords: [aws, ec2, lambda, s3, rds, docker, kubernetes, ci/cd]
+    weight: 2
+  - name: DB
+    keywords: [postgresql, postgres, mysql, redis, 데이터베이스]
+    weight: 1
+
+roles:
+  - 백엔드 개발자
+  - 풀스택 개발자
+
+notes: |
+  선호: 원격 우선. 키워드와 weight를 본인 기준으로 수정한다.

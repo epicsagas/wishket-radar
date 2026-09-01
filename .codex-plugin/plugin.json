@@ -1,0 +1,35 @@
+{
+  "name": "wishket-radar",
+  "version": "0.1.0",
+  "description": "위시켓 프로젝트 검색·분석·기술 매칭 에이전트 플러그인",
+  "author": {
+    "name": "epicsagas",
+    "url": "https://github.com/epicsagas"
+  },
+  "homepage": "https://github.com/epicsagas/wishket-radar",
+  "repository": "https://github.com/epicsagas/wishket-radar",
+  "license": "MIT",
+  "keywords": [
+    "wishket",
+    "freelance",
+    "job-matching",
+    "mcp",
+    "scraping"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Wishket Radar",
+    "shortDescription": "위시켓 프로젝트 검색·분석·기술 매칭 에이전트 플러그인",
+    "longDescription": "위시켓(wishket.com) 프로젝트 공고를 검색하고, 상세를 분석하고, 사용자 기술 프로필과 매칭해 한국어 리포트로 정리하는 에이전트 플러그인. Rust MCP 서버 + 스킬 + 분석 서브에이전트 포함.",
+    "developerName": "epicsagas",
+    "category": "Development & Workflow",
+    "capabilities": [
+      "Bash",
+      "Read",
+      "Write",
+      "Edit"
+    ],
+    "websiteURL": "https://github.com/epicsagas/wishket-radar"
+  },
+  "mcpServers": "./mcp_config.json"
+}
