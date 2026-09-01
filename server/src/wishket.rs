@@ -395,7 +395,11 @@ pub fn parse_detail(id: &str, html: &str) -> ProjectDetail {
     // 상세 페이지엔 카드 DOM(project-info-box)이 없어 parse_cards가 폴백됨 —
     // 프라이빗 매칭 뱃지는 문서 레벨(div.status-guide)에서 재확인
     if card.private_matching.is_none() {
-        card.private_matching = Some(doc.select(&sel("div.status-mark.private-mark")).next().is_some());
+        card.private_matching = Some(
+            doc.select(&sel("div.status-mark.private-mark"))
+                .next()
+                .is_some(),
+        );
     }
 
     let salary = jp
