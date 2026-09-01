@@ -8,10 +8,10 @@
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability within `wishket-radar`, please report it privately:
+If you discover a security vulnerability or concern within `wishket-radar`, please report it via GitHub:
 
-1. **GitHub Security Advisory (Recommended)**: Open a private advisory at [https://github.com/epicsagas/wishket-radar/security/advisories/new](https://github.com/epicsagas/wishket-radar/security/advisories/new).
-2. **Email**: Send details to `security@epicsagas.com`.
+1. **GitHub Security Advisory (Private)**: Open a private advisory at [https://github.com/epicsagas/wishket-radar/security/advisories/new](https://github.com/epicsagas/wishket-radar/security/advisories/new).
+2. **GitHub Issue**: Create an issue using the [Security Report Issue Template](https://github.com/epicsagas/wishket-radar/issues/new?template=security_report.yml).
 
 ### Response Timeline & SLA
 
@@ -19,4 +19,3 @@ If you discover a security vulnerability within `wishket-radar`, please report i
 - **Triage & Severity Assessment**: within 7 days
 - **Patch Release & Advisory Disclosure**: within 30~90 days depending on severity
 
-Please do not disclose vulnerabilities in public GitHub issues or discussions before a coordinated release is published.

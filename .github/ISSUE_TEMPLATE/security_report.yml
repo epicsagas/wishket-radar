@@ -1,0 +1,38 @@
+name: Security Report
+description: Report a security issue or vulnerability in wishket-radar
+labels: ["security"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for helping keep wishket-radar safe.
+        For sensitive vulnerabilities, you can also use [GitHub Private Vulnerability Advisories](https://github.com/epicsagas/wishket-radar/security/advisories/new).
+  - type: textarea
+    id: description
+    attributes:
+      label: Vulnerability / Security Concern
+      description: Describe the security issue clearly.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Affected Version
+      description: What version of wishket-radar is affected? (`wishket-mcp --version`)
+      placeholder: "e.g. 0.1.0"
+    validations:
+      required: true
+  - type: textarea
+    id: impact
+    attributes:
+      label: Potential Impact
+      description: What is the potential impact or risk?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce / Proof of Concept
+      description: Steps or details to reproduce or verify the issue.
+    validations:
+      required: true
