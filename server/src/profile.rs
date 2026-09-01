@@ -171,4 +171,14 @@ mod tests {
         let m = score(&p, "RUST 전문가");
         assert_eq!(m.score, 75);
     }
+
+    #[test]
+    fn expand_tilde_test() {
+        let p = expand_tilde(&PathBuf::from("~/test/path.yaml"));
+        if let Some(home) = std::env::var_os("HOME") {
+            assert_eq!(p, PathBuf::from(home).join("test/path.yaml"));
+        }
+        let rel = expand_tilde(&PathBuf::from("relative/path.yaml"));
+        assert_eq!(rel, PathBuf::from("relative/path.yaml"));
+    }
 }
