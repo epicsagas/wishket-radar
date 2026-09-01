@@ -1,5 +1,11 @@
 # wishket-radar
 
+<p align="center">
+  <a href="https://github.com/epicsagas/wishket-radar/releases"><img alt="Version" src="https://img.shields.io/github/v/release/epicsagas/wishket-radar?style=for-the-badge&labelColor=0d1117&color=fc8d62&logo=github&logoColor=white" /></a>
+  <a href="https://github.com/epicsagas/wishket-radar/actions"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/epicsagas/wishket-radar/ci.yml?style=for-the-badge&labelColor=0d1117&color=58a6ff&logo=github-actions&logoColor=white" /></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-Apache--2.0-3fb950?style=for-the-badge&labelColor=0d1117" /></a>
+</p>
+
 위시켓(wishket.com) 프로젝트를 검색·분석하고 내 기술 프로필과 매칭하는 멀티호스트 에이전트 플러그인 (Claude Code · Codex · Antigravity · Hermes).
 
 - **Rust MCP 서버** (`wishket`): 위시켓 비공식 검색 API(리버스 엔지니어링) 호출, HTML/JSON-LD 파싱, 신규 diff 캐시, 결정론적 키워드 점수 계산
@@ -124,3 +130,11 @@ cargo test --manifest-path server/Cargo.toml    # LZString 왕복·파서 단위
 - 요청 UA는 `wishket-radar/<버전> (+repo)`로 정체성을 밝힌다. 로그인·인증 우회 없이 공개 페이지만 조회하며, 회원 전용 영역(`/partners/`, `/media/` 등 robots.txt 비허용 경로)은 호출하지 않는다.
 - 비공식 API 기반이므로 위시켓 측 변경에 깨질 수 있다 (SSR 폴백 내장).
 - 과도한 스캔 금지. 수집 데이터는 seen 캐시(90일)와 로컬 리포트뿐이며 재배포하지 않는다.
+
+## 기여 (Contributing)
+
+기여 가이드 및 개발 환경 설정은 [CONTRIBUTING.md](CONTRIBUTING.md)를 참고해 주세요. 버그 제보와 기능 제안은 이슈를 통해 환영합니다.
+
+## 라이선스 (License)
+
+[Apache-2.0](LICENSE) © 2026 epicsagas
