@@ -1,19 +1,19 @@
 #!/bin/sh
 # wishket MCP server launcher.
 # Resolution order:
-#   1. local release binary (dev checkout)
-#   2. wishket-mcp on PATH (install.sh / cargo-dist installer — no Rust needed)
-#   3. cargo build on first run (requires Rust toolchain)
-# cargo may live in ~/.cargo/bin (rustup) or ~/.local/share/mise/shims (mise) —
+#   1. local release binary (git checkout already built)
+#   2. installed wishket-mcp (~/.local/bin or PATH, not this wrapper)
+#   3. prebuilt installer (install.sh)
+#   4. cargo build only in a git checkout, after the installer failed
+# cargo may live in ~/.cargo/bin (rustup) or ~/.local/share/mise/shims (mise).
 # MCP-spawned processes get a minimal PATH, so cover both.
-# Windows MCP may set USERPROFILE but not HOME
 if [ -z "${HOME:-}" ] && [ -n "${USERPROFILE:-}" ]; then
   HOME="$USERPROFILE"
 fi
 export HOME
 export PATH="$HOME/.cargo/bin:$HOME/.local/share/mise/shims:$HOME/.local/bin:$PATH"
 
-# hosts may pass "~" literally in WISHKET_PROFILE (agy mcp_config.json) — expand it
+# hosts may pass "~" literally in WISHKET_PROFILE (agy mcp_config.json)
 case "${WISHKET_PROFILE-}" in
   "~"*) WISHKET_PROFILE="$HOME${WISHKET_PROFILE#\~}" ;;
 esac
@@ -21,20 +21,39 @@ export WISHKET_PROFILE
 
 PLUGIN_ROOT=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 BIN="$PLUGIN_ROOT/server/target/release/wishket-mcp"
+WRAPPER="$PLUGIN_ROOT/scripts/wishket-mcp"
+INSTALLED="$HOME/.local/bin/wishket-mcp"
+
+run_if_real() {
+  cand=$1
+  [ -n "$cand" ] && [ -x "$cand" ] || return 1
+  [ "$cand" = "$WRAPPER" ] && return 1
+  [ "$cand" = "$0" ] && return 1
+  exec "$cand"
+}
 
 if [ -x "$BIN" ]; then
   exec "$BIN"
 fi
 
-if command -v wishket-mcp >/dev/null 2>&1; then
-  exec wishket-mcp
+run_if_real "$INSTALLED" || true
+found=$(command -v wishket-mcp 2>/dev/null || true)
+run_if_real "$found" || true
+
+if [ -f "$PLUGIN_ROOT/install.sh" ]; then
+  echo "wishket-mcp: installing prebuilt binary..." >&2
+  sh "$PLUGIN_ROOT/install.sh" >&2 || true
+  run_if_real "$INSTALLED" || true
+  found=$(command -v wishket-mcp 2>/dev/null || true)
+  run_if_real "$found" || true
 fi
 
-if command -v cargo >/dev/null 2>&1; then
+if [ -d "$PLUGIN_ROOT/.git" ] && command -v cargo >/dev/null 2>&1; then
+  echo "wishket-mcp: prebuilt install unavailable, building from source..." >&2
   cargo build --release --manifest-path "$PLUGIN_ROOT/server/Cargo.toml" >&2 || exit 1
   exec "$BIN"
 fi
 
-echo "wishket-mcp not found and no Rust toolchain. Install the prebuilt binary:" >&2
+echo "wishket-mcp not found. Install the prebuilt binary:" >&2
 echo "  curl --proto '=https' --tlsv1.2 -LsSf https://github.com/epicsagas/wishket-radar/releases/latest/download/install.sh | sh" >&2
 exit 1

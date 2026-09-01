@@ -9,15 +9,69 @@
 위시켓(wishket.com) 프로젝트를 검색·분석하고 내 기술 프로필과 매칭하는 멀티호스트 에이전트 플러그인 (Claude Code · Codex · Antigravity · Hermes).
 
 - **Rust MCP 서버** (`wishket`): 위시켓 비공식 검색 API(리버스 엔지니어링) 호출, HTML/JSON-LD 파싱, 신규 diff 캐시, 결정론적 키워드 점수 계산
-- **스킬** `wishket-scout`: 신규 스캔, 후보 선별, 심층 분석, 한국어 리포트 작성까지 전 과정을 조율
-- **서브에이전트** `wishket-analyst`: 프로젝트 단건 심층 분석 (적합도 A/B/C)
-- **스킬** `wishket-scan` · `wishket-search` · `wishket-profile` · `wishket-onboard`: 문장 요청 시 자동 실행 (슬래시 커맨드 불필요)
+- **온보딩** `wishket-onboard`: 플러그인 설치 후 바이너리 점검부터 매칭 프로필까지 한 번에 설정
+- **스킬** `wishket-profile` · `wishket-scan` · `wishket-search` · `wishket-scout`: 문장 요청 시 자동 실행 (슬래시 커맨드 불필요)
+- **서브에이전트** `wishket-analyst`: 프로젝트 단건 심층 분석 (적합도 A/B/C). scout가 호출한다
 
 ## 설치
 
-### 프리빌트 바이너리 설치 (Rust 툴체인 불필요)
+호스트에 플러그인을 설치한 뒤, 채팅에서 온보딩을 한 번 돌리면 MCP 바이너리 확인부터 매칭 프로필까지 끝난다. 프리빌트 바이너리는 온보딩이 못 찾거나 MCP만 따로 쓸 때의 선택 사항이다.
 
-릴리스에서 플랫폼별 프리빌트 바이너리를 제공한다. MCP 서버만 따로 쓰거나 Rust 툴체인 없이 플러그인을 쓰려면 먼저 실행:
+### Claude Code
+
+```bash
+claude plugin marketplace add epicsagas/wishket-radar
+claude plugin install wishket-radar@wishket-radar -y
+```
+
+로컬 개발은 클론 디렉터리에서 `claude plugin marketplace add .` 후 동일하게 설치한다.
+
+### Codex
+
+```bash
+codex plugin marketplace add epicsagas/wishket-radar
+codex plugin add wishket-radar@wishket-radar
+```
+
+`.codex-plugin/plugin.json`과 `.codex-plugin/agents/*.toml`을 로드한다.
+
+### agy (Antigravity)
+
+```bash
+agy plugin install https://github.com/epicsagas/wishket-radar
+agy plugin enable wishket-radar
+```
+
+루트 `plugin.json`과 `mcp_config.json`을 인식한다. MCP 실행 파일은 `${CLAUDE_PLUGIN_ROOT}`(Claude), 현재 디렉터리(agy), PATH의 `wishket-mcp` 순으로 찾는다.
+
+### Hermes
+
+```bash
+hermes plugins install https://github.com/epicsagas/wishket-radar
+hermes plugins enable wishket-radar
+```
+
+루트 `plugin.yaml`과 `__init__.py`의 `register(ctx)`를 로드한다. skills_guard에 막히면 hermes 설정에서 `plugins.scan_on_install: false`로 둔다.
+
+### 첫 설정 (온보딩)
+
+플러그인을 켠 호스트 채팅에서 한 번 요청한다.
+
+```text
+위시켓 세팅해줘
+```
+
+`wishket-onboard`가 이어서 한다.
+
+1. `wishket-mcp` 구동을 확인하고, 없으면 프리빌트(`install.sh` / `install.ps1`)를 깐다. `cargo`가 있어도 한방 설치가 먼저다. git 클론에서 한방 설치가 실패했을 때만 `cargo build --release`를 한다.
+2. 주력 스택, 가중치, 역할, 근무 조건을 물어 `~/.wishket-radar/profile.yaml`을 만든다. 키워드 동의어(예: Rust → rust, 러스트, cargo, axum)도 채운다.
+3. 원하면 `scan_new`로 베이스라인 스캔을 한 번 돌려 `~/.wishket-radar/state.json`에 현재 공고를 기록한다. 이후 스캔은 신규만 본다.
+
+이미 프로필이 있으면 요약을 보여 주고 재설정 여부만 확인한다. 프로필은 저장소에 커밋하지 않는다.
+
+### 프리빌트 바이너리 (선택)
+
+온보딩이 바이너리를 못 찾거나, MCP만 호스트 없이 쓰거나, Rust 툴체인 없이 미리 깔고 싶을 때:
 
 ```bash
 # macOS / Linux
@@ -30,66 +84,28 @@ curl --proto '=https' --tlsv1.2 -LsSf \
 irm https://github.com/epicsagas/wishket-radar/releases/latest/download/install.ps1 | iex
 ```
 
-설치된 `wishket-mcp` 바이너리는 플러그인 래퍼(`scripts/wishket-mcp`, Windows는 `scripts/wishket-mcp.cmd`)가 자동으로 찾는다. 이후 플러그인 설치 과정만 남는다. 소스에서 직접 설치할 때는 `cargo install wishket-mcp --git https://github.com/epicsagas/wishket-radar`도 가능하다. Windows에서 MCP `command: sh`가 없으면 인스톨러가 PATH에 넣은 `wishket-mcp`를 쓴다.
-
-Rust 툴체인이 있다면 프리빌트 없이도 동작한다. 래퍼가 첫 실행 시 `cargo build --release`를 자동으로 수행하며, 첫 MCP 기동에 1분 가량 걸린다.
-
-### Claude Code
-
-```bash
-claude plugin marketplace add epicsagas/wishket-radar
-claude plugin install wishket-radar@wishket-radar -y
-```
-
-로컬(비공개 개발)은 클론 디렉터리에서 `claude plugin marketplace add .`를 실행한 뒤 동일하게 설치한다. 설치 캐시(`~/.claude/plugins/cache/wishket-radar/wishket-radar/<버전>/`)에 바이너리가 없으므로 캐시 디렉터리에서 한 번 더 빌드하거나 래퍼 자동 빌드에 맡긴다.
-
-### Codex
-
-```bash
-codex plugin marketplace add epicsagas/wishket-radar
-codex plugin add wishket-radar@wishket-radar
-```
-
-`.codex-plugin/plugin.json`(interface 블록)과 `.codex-plugin/agents/*.toml`을 로드한다.
-
-### agy (Antigravity)
-
-```bash
-agy plugin install https://github.com/epicsagas/wishket-radar
-agy plugin enable wishket-radar
-```
-
-루트의 `plugin.json`과 `mcp_config.json`을 자동으로 인식한다. `mcp_config.json`의 명령 경로는 호스트와 무관하게 자동으로 해석되며, `${CLAUDE_PLUGIN_ROOT}`(Claude), 현재 디렉터리(agy), PATH의 `wishket-mcp`(인스톨러 설치본) 순서로 찾는다.
-
-### Hermes
-
-```bash
-hermes plugins install https://github.com/epicsagas/wishket-radar
-hermes plugins enable wishket-radar
-```
-
-`plugin.yaml`(루트)과 `__init__.py`의 `register(ctx)`를 로드한다. skills_guard에 막히면 hermes 설정에서 `plugins.scan_on_install: false`로 지정한다.
+래퍼(`scripts/wishket-mcp`, Windows는 `scripts/wishket-mcp.cmd`)는 로컬 릴리스 바이너리, PATH의 `wishket-mcp`, 한방 설치 순으로 찾고, git 클론에서만 마지막에 `cargo build`를 한다. `cargo install wishket-mcp --git https://github.com/epicsagas/wishket-radar`도 된다. Windows에서 MCP `command: sh`가 없으면 인스톨러가 PATH에 넣은 바이너리를 쓴다.
 
 ## 사용
 
-각 스킬은 별도 명령 없이 문장으로 요청하면 자동으로 실행된다.
+별도 슬래시 명령 없이 문장으로 요청하면 된다. 권장 순서는 온보딩 → 프로필 확인 → 일상 조회다.
 
-| 스킬 | 트리거 예시 | 동작 |
-|---|---|---|
-| `wishket-scan` | "위시켓 스캔", "새 프로젝트 있어?" | 마지막 스캔 이후 신규만 diff 조회 |
-| `wishket-scout` | "위시켓 분석", "스카우트", "리포트 뽑아줘" | 신규 스캔 + 상위 후보 심층 분석 + 리포트 |
-| `wishket-search` | "위시켓 검색", "flutter 프로젝트 있어?", "외주 찾아줘" | 임시 검색 (캐시 기록 없음) |
-| `wishket-onboard` | "위시켓 세팅해줘" | 온보딩: 바이너리 점검/설치 + 프로필 설정 + 베이스라인 스캔 |
-| `wishket-profile` | "프로필 보여줘", "rust 가중치 올려" | `~/.wishket-radar/profile.yaml` 조회/편집 |
+| 순서 | 스킬 | 트리거 예시 | 동작 |
+|---|---|---|---|
+| 1 | `wishket-onboard` | "위시켓 세팅해줘", "온보딩" | 바이너리 점검, 프로필 생성, 베이스라인 스캔 |
+| 2 | `wishket-profile` | "프로필 보여줘", "rust 가중치 올려" | `~/.wishket-radar/profile.yaml` 조회/편집. 다음 스캔에 바로 반영 |
+| 3 | `wishket-scan` | "위시켓 스캔", "새 프로젝트 있어?" | 마지막 스캔 이후 신규만 diff |
+| 4 | `wishket-search` | "위시켓 검색", "flutter 프로젝트 있어?", "외주 찾아줘" | 임시 검색 (캐시 기록 없음) |
+| 5 | `wishket-scout` | "위시켓 분석", "스카우트", "리포트 뽑아줘" | 신규 스캔 + 상위 후보 심층 분석 + 리포트 |
 
-리포트: `~/.wishket-radar/reports/` · 캐시: `~/.wishket-radar/state.json`
-
-매칭 프로필은 저장소의 `profile.example.yaml`을 복사해 만든다. 실제 프로필은 gitignore되며 커밋하지 않는다.
+온보딩을 건너뛰고 프로필만 손으로 만들 때는 예시를 복사한다.
 
 ```bash
 mkdir -p ~/.wishket-radar
 cp profile.example.yaml ~/.wishket-radar/profile.yaml
 ```
+
+리포트는 `~/.wishket-radar/reports/`, seen 캐시는 `~/.wishket-radar/state.json`이다.
 
 ## MCP 도구
 

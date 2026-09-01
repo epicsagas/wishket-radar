@@ -5,12 +5,13 @@ description: 위시켓 플러그인 온보딩 (바이너리 설치 확인 + 프�
 
 위시켓 플러그인 온보딩. 새 환경/사용자에서 wishket-radar가 정상 구동 가능한 상태를 만들고, 사용자 프로필 설정부터 다음 행동 요령까지 원스톱으로 완료한다.
 
-1. **바이너리 및 실행 환경 점검/설치**:
-   - MCP 서버(`wishket-mcp`)가 정상 구동 가능한지 확인 (`list_filters` MCP 도구 호출 시도 또는 `which wishket-mcp` 확인).
-   - 바이너리가 없고 구동되지 않는 경우 사전 빌드된 바이너리 자동 설치 실행:
+1. **바이너리 및 실행 환경 점검/설치** (순서 고정. `cargo`가 있어도 한방 설치를 건너뛰지 않는다):
+   - MCP 서버(`wishket-mcp`)가 정상 구동 가능한지 확인 (`list_filters` 호출 또는 `which wishket-mcp`).
+   - 없거나 기동 실패면 **한방 설치를 먼저** 실행한다. PATH에 `cargo`가 있어도 이 단계를 생략하지 않는다.
      - macOS / Linux: `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/epicsagas/wishket-radar/releases/latest/download/install.sh | sh`
      - Windows: `powershell -c "irm https://github.com/epicsagas/wishket-radar/releases/latest/download/install.ps1 | iex"`
-   - 또는 소스 디렉터리 내에 있고 `cargo`가 있는 경우 `cargo build --release --manifest-path server/Cargo.toml` 실행.
+     - 플러그인 루트에 `install.sh` / `install.ps1`이 있으면 그걸 실행해도 된다.
+   - 한방 설치가 실패했고, **현재 위치가 git 클론**(`server/Cargo.toml`과 `.git`)이며 `cargo`가 있을 때만 `cargo build --release --manifest-path server/Cargo.toml`. 플러그인 캐시 디렉터리에서는 cargo 빌드를 하지 않는다.
    - MCP 도구가 응답하는지 최종 확인.
 
 2. **현재 프로필 상태 확인**:
