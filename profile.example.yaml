@@ -1,5 +1,5 @@
 # 위시켓 프로젝트 매칭용 기술 프로필 예시
-# 사용: cp profile.example.yaml ~/.wishket/profile.yaml
+# 사용: cp profile.example.yaml ~/.wishket-radar/profile.yaml
 # 실제 프로필(profile.yaml)은 gitignore 대상이며 저장소에 커밋하지 않는다.
 # weight: 상대적 중요도. score = 100 * 매칭 weight 합 / 전체 weight 합.
 

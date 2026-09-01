@@ -7,7 +7,7 @@
         "for d in \"${CLAUDE_PLUGIN_ROOT:-}\" . \"$HOME/.wishket-radar/plugin\"; do if [ -n \"$d\" ] && [ -x \"$d/scripts/wishket-mcp\" ]; then exec sh \"$d/scripts/wishket-mcp\"; fi; done; exec wishket-mcp"
       ],
       "env": {
-        "WISHKET_PROFILE": "~/.wishket/profile.yaml"
+        "WISHKET_PROFILE": "~/.wishket-radar/profile.yaml"
       }
     }
   }

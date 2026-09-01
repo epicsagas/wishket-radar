@@ -73,15 +73,15 @@ hermes plugins enable wishket-radar
 | `wishket-scan` | "위시켓 스캔", "새 프로젝트 있어?" | 마지막 스캔 이후 신규만 diff 조회 |
 | `wishket-search` | "위시켓 검색", "flutter 프로젝트 있어?" | 임시 검색 (캐시 기록 없음) |
 | `wishket-onboard` | "위시켓 세팅해줘" | 온보딩: 인터뷰로 프로필 생성 후 베이스라인 스캔 |
-| `wishket-profile` | "프로필 보여줘", "rust 가중치 올려" | `~/.wishket/profile.yaml` 조회/편집 |
+| `wishket-profile` | "프로필 보여줘", "rust 가중치 올려" | `~/.wishket-radar/profile.yaml` 조회/편집 |
 
 리포트: `~/.wishket-radar/reports/` · 캐시: `~/.wishket-radar/state.json`
 
 매칭 프로필은 저장소의 `profile.example.yaml`을 복사해 만든다. 실제 프로필은 gitignore되며 커밋하지 않는다.
 
 ```bash
-mkdir -p ~/.wishket
-cp profile.example.yaml ~/.wishket/profile.yaml
+mkdir -p ~/.wishket-radar
+cp profile.example.yaml ~/.wishket-radar/profile.yaml
 ```
 
 ## MCP 도구
@@ -98,12 +98,13 @@ cp profile.example.yaml ~/.wishket/profile.yaml
 
 검색 필터는 `k=v&k=v` 문자열을 LZString(base64)으로 압축해 `?d=` 파라미터로 전송하고, `X-Requested-With` 헤더와 함께 호출하면 `{result, count}` JSON을 반환한다 (`server/src/wishket.rs` 참조). 상세 페이지는 schema.org JobPosting JSON-LD에서 전체 설명을 추출한다.
 
-매칭은 2단계로 동작한다. 서버가 `WISHKET_PROFILE`(기본 `~/.wishket/profile.yaml`) 키워드로 결정론적 점수(0~100)를 계산하고, LLM(analyst)이 공고 본문을 근거로 적합도 A/B/C를 판정한다.
+매칭은 2단계로 동작한다. 서버가 `WISHKET_PROFILE`(기본 `~/.wishket-radar/profile.yaml`) 키워드로 결정론적 점수(0~100)를 계산하고, LLM(analyst)이 공고 본문을 근거로 적합도 A/B/C를 판정한다.
 
-## 상태
+## 디렉터리 구조 및 상태
 
 ```
 ~/.wishket-radar/
+├── profile.yaml  # 매칭 프로필 (기술 스택, 가중치, 역할 등)
 ├── state.json    # seen 프로젝트 ID (90일 후 자동 정리)
 └── reports/      # 스캔 리포트 (한국어 markdown)
 ```

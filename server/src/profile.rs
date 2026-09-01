@@ -63,11 +63,11 @@ pub fn profile_path() -> Option<PathBuf> {
         }
     }
     if let Some(home) = std::env::var_os("HOME").map(PathBuf::from) {
-        let p1 = home.join(".wishket").join("profile.yaml");
+        let p1 = home.join(".wishket-radar").join("profile.yaml");
         if p1.is_file() {
             return Some(p1);
         }
-        let p2 = home.join(".wishket-radar").join("profile.yaml");
+        let p2 = home.join(".wishket").join("profile.yaml");
         if p2.is_file() {
             return Some(p2);
         }
