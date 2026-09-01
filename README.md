@@ -72,7 +72,7 @@ hermes plugins enable wishket-radar
 |---|---|---|
 | `wishket-scan` | "위시켓 스캔", "새 프로젝트 있어?" | 마지막 스캔 이후 신규만 diff 조회 |
 | `wishket-search` | "위시켓 검색", "flutter 프로젝트 있어?" | 임시 검색 (캐시 기록 없음) |
-| `wishket-onboard` | "위시켓 세팅해줘" | 온보딩: 인터뷰로 프로필 생성 후 베이스라인 스캔 |
+| `wishket-onboard` | "위시켓 세팅해줘" | 온보딩: 바이너리 점검/설치 + 프로필 설정 + 베이스라인 스캔 |
 | `wishket-profile` | "프로필 보여줘", "rust 가중치 올려" | `~/.wishket-radar/profile.yaml` 조회/편집 |
 
 리포트: `~/.wishket-radar/reports/` · 캐시: `~/.wishket-radar/state.json`

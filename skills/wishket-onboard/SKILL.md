@@ -1,19 +1,40 @@
 ---
 name: wishket-onboard
-description: 위시켓 플러그인 첫 사용 온보딩 (프로필 생성 + 베이스라인 스캔). "위시켓 시작할게", "위시켓 세팅해줘", "온보딩" 등에 사용. 프로필이 이미 있으면 재설정 여부만 확인.
+description: 위시켓 플러그인 온보딩 (바이너리 설치 확인 + 프로필 생성 + 베이스라인 스캔 + 다음 행동 요령). "위시켓 시작할게", "위시켓 세팅해줘", "온보딩" 등에 사용.
 ---
 
-위시켓 플러그인 온보딩. 새 사용자/샌드박스에서 초기 설정을 한 번에 끝낸다.
+위시켓 플러그인 온보딩. 새 환경/사용자에서 wishket-radar가 정상 구동 가능한 상태를 만들고, 사용자 프로필 설정부터 다음 행동 요령까지 원스톱으로 완료한다.
 
-1. **현재 상태 확인**: `~/.wishket-radar/profile.yaml` (`WISHKET_PROFILE` 오버라이드 시 그 경로) 읽기.
-   - 이미 스킬이 채워져 있으면 기존 프로필을 요약해 보여주고, 재설정 여부만 확인. 재설정 아니면 종료.
-   - 없거나 비어 있으면 다음 단계로.
-2. **프로필 인터뷰**: AskUserQuestion으로 물음 (한 번에 최대 4개).
-   - 주력 기술 스택 (예: Rust, Svelte+TS, Flutter, AWS)
-   - 스택별 상대 중요도 (높음/중간/낮음 → weight 3/2/1)
-   - 수행 가능한 모집 역할 (예: 백엔드 개발자, 풀스택 개발자)
-   - 근무 조건 notes (원격/출근/지역, 선호 도메인)
-3. **profile.yaml 생성**: 필요하면 기존 포맷 참고해 Write. 스킬마다 한국어+영어 동의어 keywords 자동 확장 (예: Rust → rust, 러스트, cargo, axum / Flutter → flutter, 플러터, dart, 모바일 앱).
-   - 수정 즉시 다음 스캔에 반영됨(서버 재시작 불필요) 안내.
-4. **베이스라인 스캔**: `scan_new` MCP 도구 1회 실행 제안 (기본 development 3페이지). 첫 실행은 전체가 신규(베이스라인) — 이후 스캔부터 신규만 보고됨. 사용자가 스킵하면 생략.
-5. **완료 안내**: wishket-scan(신규 스캔), wishket-search(임시 검색), wishket-profile(프로필 조회/편집) 안내. 프로필 조정은 언제든 자연어로 가능함을 알림.
+1. **바이너리 및 실행 환경 점검/설치**:
+   - MCP 서버(`wishket-mcp`)가 정상 구동 가능한지 확인 (`list_filters` MCP 도구 호출 시도 또는 `which wishket-mcp` 확인).
+   - 바이너리가 없고 구동되지 않는 경우 사전 빌드된 바이너리 자동 설치 실행:
+     - macOS / Linux: `curl --proto '=https' --tlsv1.2 -LsSf https://github.com/epicsagas/wishket-radar/releases/latest/download/install.sh | sh`
+     - Windows: `powershell -c "irm https://github.com/epicsagas/wishket-radar/releases/latest/download/install.ps1 | iex"`
+   - 또는 소스 디렉터리 내에 있고 `cargo`가 있는 경우 `cargo build --release --manifest-path server/Cargo.toml` 실행.
+   - MCP 도구가 응답하는지 최종 확인.
+
+2. **현재 프로필 상태 확인**:
+   - `~/.wishket-radar/profile.yaml` (`WISHKET_PROFILE` 오버라이드 시 그 경로) 읽기.
+   - 이미 프로필이 채워져 있으면 기존 프로필을 요약해 보여주고, 재설정 여부만 AskUserQuestion으로 확인.
+     - 기존 프로필 유지 선택 시: 4단계(베이스라인 스캔)로 바로 이동.
+     - 재설정 선택 또는 프로필이 없는 경우: 3단계로 진행.
+
+3. **프로필 인터뷰 & profile.yaml 생성**:
+   - AskUserQuestion으로 인터뷰 진행 (한 번에 최대 4개):
+     - 주력 기술 스택 (예: Rust, Svelte+TS, Flutter, AWS)
+     - 스택별 상대 중요도 (높음/중간/낮음 → weight 3/2/1)
+     - 수행 가능한 모집 역할 (예: 백엔드 개발자, 풀스택 개발자)
+     - 근무 조건 notes (원격/출근/지역, 선호 도메인)
+   - `~/.wishket-radar/profile.yaml` 생성: 스킬마다 한국어+영어 동의어 keywords 자동 확장 (예: Rust → rust, 러스트, cargo, axum / Flutter → flutter, 플러터, dart, 모바일 앱).
+   - 프로필은 수정 즉시 다음 스캔에 반영됨(서버 재시작 불필요)을 안내.
+
+4. **베이스라인 스캔**:
+   - `scan_new` MCP 도구 1회 실행 제안 (기본 development 3페이지).
+   - 첫 실행 시 검색된 프로젝트 전체가 베이스라인 캐시(`~/.wishket-radar/state.json`)에 기록됨 — 이후 스캔부터는 신규 등록 공고만 보고됨.
+   - 사용자가 스킵을 원하면 생략.
+
+5. **완료 및 다음 행동 요령 안내**:
+   - **신규 프로젝트 스캔**: `/wishket-radar:wishket-scan` (또는 wishket-scout) — *"위시켓 새 프로젝트 있어?"*, *"새 외주 올라온 거 있나?"*
+   - **조건별 실시간 검색**: `/wishket-radar:wishket-search` — *"flutter 외주 찾아줘"*, *"파이썬 백엔드 검색해줘"*
+   - **프로필/가중치 조정**: `/wishket-radar:wishket-profile` — 언제든 자연어로 *"Rust 가중치 올려줘"*, *"FastAPI 키워드 추가"* 등으로 변경 가능
+   - **정기 스캔 예약**: `/schedule` 명령어를 통해 매일 아침 자동 스캔 루틴을 등록할 수 있음을 안내.
