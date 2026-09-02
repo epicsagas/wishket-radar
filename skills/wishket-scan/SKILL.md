@@ -9,3 +9,7 @@ description: 위시켓 신규 프로젝트 diff 스캔 (마지막 스캔 이후 
 2. 결과 요약: 신규 N건 (`new_count`), 스코어 순 목록. `baseline: true`면 베이스라인 스캔임을 안내.
 3. `new_count == 0`이면 마지막 스캔 시각(`~/.wishket-radar/state.json`의 `last_scan`)과 함께 "신규 없음"만 응답.
 4. 심층 분석·리포트가 필요하면 wishket-scout 스킬로 확장 제안.
+
+## 이후 흐름
+
+스캔된 공고는 `state.json`에 쌓이며 분류 전까지 대시보드 **인박스**에 남는다. 관심/스킵 분류는 대시보드(wishket-dashboard)에서 하는 게 빠르고, 관심 표시한 것만 지원 파이프라인으로 넘어간다.

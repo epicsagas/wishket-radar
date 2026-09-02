@@ -63,7 +63,11 @@ flowchart LR
 
 ## 4단계: 출력
 
-파일 저장: `~/.wishket-radar/portfolios/YYYY-MM-DD-<slug>.txt` (디렉터리 없으면 생성). 아래 양식 그대로:
+파일 저장: `~/.wishket-radar/portfolios/YYYY-MM-DD-<slug>.md` (디렉터리 없으면 생성).
+
+포트폴리오는 특정 공고에 종속되지 않는 재사용 자산이므로 **파일명에 공고 ID를 넣지 않는다** (제안서와 반대). 대시보드에서는 "내 정보 > 포트폴리오" 탭에 프로필과 나란히 표시된다.
+
+본문은 아래 양식 그대로:
 
 ```text
 위시켓 포트폴리오 초안 — YYYY-MM-DD

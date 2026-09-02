@@ -23,7 +23,7 @@ flowchart LR
 
 ## 1단계: 입력
 
-- 공고 ID/URL이면 `get_project`. 예산·기간·투입 정보를 확보.
+- 공고 ID/URL이면 `get_project`. 예산·기간·투입 정보를 확보. `state.json`의 `seen[<id>].description`에 캐시가 있으면 그걸 먼저 쓴다.
 - 요구사항 문서(PDF/PPT/DOCX)면 wishket-portfolio와 동일 방식으로 텍스트 추출 후 분석.
 - 둘 다 없으면 사용자에게 기능 목록을 구두로 받는다.
 

@@ -99,10 +99,10 @@ irm https://github.com/epicsagas/wishket-radar/releases/latest/download/install.
 | 5 | `wishket-scout` | "위시켓 분석", "스카우트", "리포트 뽑아줘" | 신규 스캔 + 상위 후보 심층 분석 + 리포트 |
 | 6 | `wishket-portfolio` | "이 프로젝트로 포트폴리오 써줘" | 위시켓 포트폴리오 폼 초안 (일반 텍스트) |
 | 7 | `wishket-apply` | "이 공고 지원서 써줘" | 제안서 작성 + 첨부 포트폴리오 추천. 견적은 `wishket-quote` |
-| 8 | `wishket-pipeline` | "지원했어", "지원 현황" | applications.yaml 지원 추적, 수주율 퍼널 |
+| 8 | `wishket-pipeline` | "지원했어", "미팅 잡혔어", "지원 현황" | 위시켓 10단계 추적, 단계별 전환율·수주율 |
 | 9 | `wishket-deadline` | "마감 캘린더에 넣어줘" | .ics 생성 → macOS/구글 캘린더 등록 |
 | 10 | `wishket-feedback` | "수주율 높여줘" | 지원 결과 데이터로 프로필 가중치 보정 제안 |
-| 11 | `wishket-dashboard` | "대시보드", "웹 UI 켜줘" | 로컬 webui 실행 (아래 참고) |
+| 11 | `wishket-dashboard` | "대시보드", "웹 UI 켜줘", "공고 분류할래" | 로컬 webui 실행 — 인박스 트리아지가 여기서 (아래 참고) |
 
 온보딩을 건너뛰고 프로필만 손으로 만들 때는 예시를 복사한다.
 

@@ -23,6 +23,8 @@ flowchart LR
 - 사용자가 ID/URL을 주면 `get_project`로 상세 조회.
 - scout 리포트 파일 경로를 주면 그 파일에서 ID 추출 후 `get_project`.
 - 없으면 `search_projects`로 공고를 찾아 사용자에게 확인.
+- `~/.wishket-radar/state.json`의 해당 `seen` 항목에 `description`이 캐시돼 있으면(대시보드에서 상세를 불러온 경우) 그걸 먼저 쓴다 — 재조회는 robots Crawl-delay 5초를 소모한다.
+- 제안서를 쓴다는 건 이미 관심 단계라는 뜻이다. `triage`가 없으면 wishket-pipeline으로 "관심" 등록을 먼저 제안한다.
 
 ## 2단계: 재료 수집
 
@@ -57,9 +59,13 @@ flowchart LR
 
 ## 5단계: 저장·등록
 
-- 저장: `~/.wishket-radar/proposals/YYYY-MM-DD-<id>.txt` (디렉터리 없으면 생성).
+- 저장: `~/.wishket-radar/proposals/YYYY-MM-DD-<공고ID>[-용도].md` (디렉터리 없으면 생성).
+  - **파일명에 공고 ID(5~6자리)를 반드시 넣는다.** 대시보드가 파일명에서 ID를 뽑아 제안서를 공고별로 묶고 파이프라인 상세와 연결한다. ID가 없으면 어느 공고 것인지 추적되지 않는다.
+  - 용도 접미사 예: `-form`(위시켓 폼 붙여넣기용 일반 텍스트), `-submit`(제출본). 예) `2026-09-02-158080-form.txt`, `2026-09-02-158080-submit.md`
+  - 확장자: 검토용 초안은 `.md`(대시보드가 렌더), 폼에 붙여넣을 일반 텍스트는 `.txt`.
 - 채팅에는 요약: 제안 전략 한 줄, 매칭 강점, 제안 금액 상태(있음/협의), 첨부 추천 목록.
-- 사용자가 지원 확정하면 wishket-pipeline으로 applications.yaml에 등록. 금액·기간·마감을 물어 같이 기록.
+- 사용자가 지원 확정하면 wishket-pipeline으로 단계를 "지원"으로 올린다(applications.yaml 승격). 금액·기간·마감을 물어 같이 기록.
+- 초안만 쓰고 제출을 미루면 "관심"에 두고 `next_action`에 "제안서 초안 완료 — 제출 여부 결정"을 적는다.
 
 ## 주의
 
