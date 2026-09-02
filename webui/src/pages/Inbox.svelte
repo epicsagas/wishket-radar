@@ -99,6 +99,9 @@
             <span class="badge {gradeTone(it.analysis.grade)}" title="스카우트 리포트 판정">{it.analysis.grade}</span>
           {/if}
           <span class="badge muted" title="키워드 매칭 점수">{it.score ?? 0}</span>
+          {#if it.private_matching}
+            <span class="badge warn" title="PRIME·PRO·BOOST 파트너에게만 공개되는 비공개 프로젝트">프라이빗 매칭</span>
+          {/if}
           <a href="#/inbox/{it.id}" class="title" class:missing={it.title_missing}>{it.title}</a>
           {#if it.expired}<span class="badge bad">마감됨</span>{/if}
           {#if it.url}

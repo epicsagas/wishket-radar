@@ -66,7 +66,12 @@
     <button class="ghost" onclick={() => go('/pipeline')} style="margin-bottom: 0.5rem">← 파이프라인</button>
     <h1>{item?.title ?? id}</h1>
   </div>
-  {#if item}<span class="badge {statusTone(item.status)}">{item.status}</span>{/if}
+  <div class="row">
+    {#if item}<span class="badge {statusTone(item.status)}">{item.status}</span>{/if}
+    {#if cached?.private_matching}
+      <span class="badge warn" title="PRIME·PRO·BOOST 파트너에게만 공개되는 비공개 프로젝트">프라이빗 매칭</span>
+    {/if}
+  </div>
 </div>
 
 {#if error}<div class="banner err">{error}</div>{/if}
@@ -126,6 +131,7 @@
         {/if}
 
         {#if cached?.budget}<dt>예산</dt><dd>{cached.budget}</dd>{/if}
+        {#if cached?.duration}<dt>예상 기간</dt><dd>{cached.duration}</dd>{/if}
         {#if cached?.role}<dt>역할</dt><dd>{cached.role}</dd>{/if}
         {#if item.url}
           <dt>공고</dt>

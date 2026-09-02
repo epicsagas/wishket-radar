@@ -60,6 +60,7 @@ export interface CachedDetail {
   skills: string[]
   budget: string | null
   duration: string | null
+  private_matching: boolean | null
   detail_fetched_at: string | null
 }
 
@@ -70,6 +71,7 @@ export interface InboxItem {
   score: number | null
   budget: string | null
   duration: string | null
+  private_matching: boolean | null
   deadline: string | null
   skills: string[]
   first_seen: string

@@ -13,6 +13,7 @@
     score: number | null
     budget: string | null
     duration: string | null
+    private_matching: boolean | null
     deadline: string | null
     skills: string[]
     first_seen: string
@@ -96,6 +97,9 @@
   <div class="row">
     {#if item?.analysis?.grade}
       <span class="badge {gradeTone(item.analysis.grade)}">적합도 {item.analysis.grade}</span>
+    {/if}
+    {#if item?.private_matching}
+      <span class="badge warn" title="PRIME·PRO·BOOST 파트너에게만 공개되는 비공개 프로젝트">프라이빗 매칭</span>
     {/if}
     {#if item?.score != null}
       <span class="badge muted">매칭 {item.score}</span>

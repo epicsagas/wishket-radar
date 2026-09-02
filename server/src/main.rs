@@ -24,6 +24,33 @@ fn err(msg: String) -> McpError {
     McpError::internal_error(msg, None)
 }
 
+/// 이미 아는 인박스 항목의 빈 카드 정보를 최신 스캔 카드로 채운다.
+/// 구 버전(카드 정보 저장 전)이 남긴 state.json도 다시 만나면 완성된다.
+/// 값이 있는 필드는 건드리지 않는다 — 트리아지 중에 데이터가 바뀌면 안 된다.
+fn backfill_from_card(e: &mut state::SeenEntry, c: &ProjectCard) {
+    if e.url.is_none() {
+        e.url = Some(c.url.clone());
+    }
+    if e.title.trim().is_empty() {
+        e.title = c.title.clone();
+    }
+    if e.budget.is_none() {
+        e.budget = c.budget.clone();
+    }
+    if e.duration.is_none() {
+        e.duration = c.duration.clone();
+    }
+    if e.deadline.is_none() {
+        e.deadline = c.deadline.clone();
+    }
+    if e.skills.is_empty() {
+        e.skills = c.skills.clone();
+    }
+    if e.private_matching.is_none() {
+        e.private_matching = c.private_matching;
+    }
+}
+
 fn json_result(v: Value) -> CallToolResult {
     CallToolResult::structured(v)
 }
@@ -191,27 +218,22 @@ impl Wishket {
         state::prune(&mut st);
         let known_before = st.seen.len();
         let mut already = 0u32;
-        cards.retain(|c| match st.seen.get(&c.id) {
-            Some(_) => {
+        cards.retain(|c| match st.seen.get_mut(&c.id) {
+            Some(e) => {
                 already += 1;
+                // 구 버전 state엔 카드 정보가 비어 있다 — 다시 만나면 채운다
+                backfill_from_card(e, c);
                 false
             }
             None => {
                 // 인박스에 그대로 렌더할 수 있도록 카드 정보를 같이 저장한다
                 // (트리아지 화면이 매번 위시켓을 다시 긁지 않게).
-                st.seen.insert(
-                    c.id.clone(),
-                    state::SeenEntry {
-                        first_seen: scan_at.clone(),
-                        title: c.title.clone(),
-                        url: Some(c.url.clone()),
-                        budget: c.budget.clone(),
-                        duration: c.duration.clone(),
-                        deadline: c.deadline.clone(),
-                        skills: c.skills.clone(),
-                        ..Default::default()
-                    },
-                );
+                let mut e = state::SeenEntry {
+                    first_seen: scan_at.clone(),
+                    ..Default::default()
+                };
+                backfill_from_card(&mut e, c);
+                st.seen.insert(c.id.clone(), e);
                 true
             }
         });
@@ -440,5 +462,45 @@ mod tests {
         assert!(h.contains("stdio"), "{h}");
         assert!(cli_output(None).is_none());
         assert!(cli_output(Some("serve")).is_none());
+    }
+
+    #[test]
+    fn backfill_fills_legacy_entry_without_overwriting() {
+        // 구 버전 state.json: first_seen/title만 있는 최소 항목
+        let mut e = state::SeenEntry {
+            first_seen: "2026-09-01T10:00:00+09:00".into(),
+            title: "기존 제목".into(),
+            ..Default::default()
+        };
+        let c = ProjectCard {
+            id: "1".into(),
+            url: "https://www.wishket.com/project/1/".into(),
+            title: "카드 제목".into(),
+            budget: Some("월 금액 7,000,000원 /월".into()),
+            duration: Some("예상 기간 300일".into()),
+            private_matching: Some(true),
+            skills: vec!["flutter".into()],
+            ..Default::default()
+        };
+        backfill_from_card(&mut e, &c);
+        assert_eq!(e.title, "기존 제목", "있는 값은 덮지 않는다");
+        assert_eq!(e.url.as_deref(), Some(c.url.as_str()));
+        assert_eq!(e.budget.as_deref(), Some("월 금액 7,000,000원 /월"));
+        assert_eq!(e.duration.as_deref(), Some("예상 기간 300일"));
+        assert_eq!(e.private_matching, Some(true));
+        assert_eq!(e.skills, vec!["flutter"]);
+
+        // 다시 만나도 이미 찬 필드는 그대로
+        let mut filled = e.clone();
+        let other = ProjectCard {
+            title: "다른 제목".into(),
+            budget: Some("협의".into()),
+            private_matching: Some(false),
+            ..c.clone()
+        };
+        backfill_from_card(&mut filled, &other);
+        assert_eq!(filled.title, "기존 제목");
+        assert_ne!(filled.budget.as_deref(), Some("협의"));
+        assert_eq!(filled.private_matching, Some(true));
     }
 }

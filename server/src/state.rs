@@ -38,6 +38,10 @@ pub struct SeenEntry {
     pub deadline: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<String>,
+    /// 프라이빗 매칭(PRIME·PRO·BOOST 파트너 전용) 여부 — 홈페이지에 가야
+    /// 확인 가능한 정보라 인박스에서 바로 보이게 저장한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub private_matching: Option<bool>,
 
     // --- 상세 캐시 (인박스 "상세 불러오기"로 채워짐) -------------------
     /// JSON-LD 전체 설명. 있으면 상세 화면이 재조회 없이 바로 렌더한다.
@@ -260,6 +264,7 @@ mod tests {
                 triage: Some(Triage::Interested),
                 triaged_at: Some("2026-09-02".into()),
                 score: Some(37),
+                private_matching: Some(true),
                 ..Default::default()
             },
         );
@@ -268,6 +273,7 @@ mod tests {
         let back: State = serde_json::from_str(&json).unwrap();
         assert_eq!(back.seen["9"].triage, Some(Triage::Interested));
         assert_eq!(back.seen["9"].score, Some(37));
+        assert_eq!(back.seen["9"].private_matching, Some(true));
     }
 
     #[test]

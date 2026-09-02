@@ -182,11 +182,18 @@ async fn get_state(State(app): ApiState) -> Result<Json<Value>, ApiError> {
     // 리포트의 LLM 분석(등급·주의점·제안 방향) — 기계 점수로는 못 내는 정보
     let analyses = reports::load_all(&dir.join("reports"));
     let inbox_count = scan.seen.values().filter(|e| e.triage.is_none()).count();
-    // 캐시된 공고 상세 — 파이프라인 상세 화면이 재조회 없이 본문을 띄운다
+    // 캐시된 공고 상세 — 파이프라인 상세 화면이 재조회 없이 본문을 띄운다.
+    // 상세 본문이 없어도 카드 정보(예산·기간·프라이빗)만 있으면 포함한다 —
+    // 좌측 요약 패널이 상세 불러오기 전에도 조건을 보여줘야 한다.
     let details: serde_json::Map<String, Value> = scan
         .seen
         .iter()
-        .filter(|(_, e)| e.detail_fetched_at.is_some())
+        .filter(|(_, e)| {
+            e.detail_fetched_at.is_some()
+                || e.budget.is_some()
+                || e.duration.is_some()
+                || e.private_matching.unwrap_or(false)
+        })
         .map(|(id, e)| {
             (
                 id.clone(),
@@ -200,6 +207,7 @@ async fn get_state(State(app): ApiState) -> Result<Json<Value>, ApiError> {
                     "skills": e.skills,
                     "budget": e.budget,
                     "duration": e.duration,
+                    "private_matching": e.private_matching,
                     "detail_fetched_at": e.detail_fetched_at,
                 }),
             )
@@ -475,6 +483,7 @@ async fn get_inbox(State(app): ApiState) -> Json<Value> {
                 "score": e.score,
                 "budget": e.budget,
                 "duration": e.duration,
+                "private_matching": e.private_matching,
                 "deadline": deadline,
                 "expired": deadline.as_deref().map(|d| d < today_s.as_str()).unwrap_or(false),
                 "skills": e.skills,
@@ -543,6 +552,9 @@ async fn fetch_inbox_detail(
         if detail.card.duration.is_some() {
             e.duration = detail.card.duration.clone();
         }
+        if detail.card.private_matching.is_some() {
+            e.private_matching = detail.card.private_matching;
+        }
         if deadline.is_some() {
             e.deadline = deadline.clone();
         }
@@ -582,6 +594,7 @@ async fn fetch_inbox_detail(
         "url": detail.card.url,
         "budget": detail.card.budget,
         "duration": detail.card.duration,
+        "private_matching": detail.card.private_matching,
         "deadline": deadline,
         "skills": detail.card.skills,
         "role": detail.card.role,
@@ -610,6 +623,7 @@ async fn get_inbox_item(
         "score": e.score,
         "budget": e.budget,
         "duration": e.duration,
+        "private_matching": e.private_matching,
         "deadline": e.deadline,
         "skills": e.skills,
         "first_seen": e.first_seen,
