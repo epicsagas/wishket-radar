@@ -3,6 +3,7 @@
   import { route, segments } from './router'
   import { startPolling, stopPolling, appState, stateError } from './store'
   import { getToken, setToken } from './api'
+  import { themeFromDom, toggleTheme, type Theme } from './lib/theme'
   import TokenGate from './components/TokenGate.svelte'
   import Dashboard from './pages/Dashboard.svelte'
   import Inbox from './pages/Inbox.svelte'
@@ -14,6 +15,7 @@
   import Reports from './pages/Reports.svelte'
 
   let unauthorized = $state(false)
+  let theme = $state<Theme>(typeof document === 'undefined' ? 'dark' : themeFromDom())
 
   const pages: Record<string, { comp: typeof Dashboard; label: string }> = {
     '/inbox': { comp: Inbox, label: '인박스' },
@@ -69,7 +71,27 @@
         {#if counts[href]}<span class="count">{counts[href]}</span>{/if}
       </a>
     {/each}
-    <footer>v{$appState?.version ?? '—'}</footer>
+    <footer>
+      <span>v{$appState?.version ?? '—'}</span>
+      <button
+        type="button"
+        class="theme-toggle"
+        aria-label={theme === 'dark' ? '라이트 테마로 전환' : '다크 테마로 전환'}
+        title={theme === 'dark' ? '라이트 테마' : '다크 테마'}
+        onclick={() => (theme = toggleTheme(theme))}
+      >
+        {#if theme === 'dark'}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M12 3v1.6M12 19.4V21M4.93 4.93l1.13 1.13M17.94 17.94l1.13 1.13M3 12h1.6M19.4 12H21M4.93 19.07l1.13-1.13M17.94 6.06l1.13-1.13" />
+          </svg>
+        {:else}
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M20 14.6A8.5 8.5 0 1 1 9.4 4 7 7 0 0 0 20 14.6z" />
+          </svg>
+        {/if}
+      </button>
+    </footer>
   </nav>
 
   <main>

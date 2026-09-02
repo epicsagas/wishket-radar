@@ -26,7 +26,7 @@
   .overlay {
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.82);
+    background: var(--overlay);
     display: grid;
     place-items: center;
     z-index: 10;
@@ -40,7 +40,7 @@
     display: flex;
     flex-direction: column;
     gap: 0.8rem;
-    box-shadow: 0 20px 60px rgb(0 0 0 / 0.6);
+    box-shadow: var(--shadow-lg);
   }
   .dot {
     width: 9px; height: 9px; border-radius: 50%;

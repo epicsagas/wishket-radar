@@ -311,7 +311,7 @@
 
   .skill {
     border: 1px solid var(--border); border-radius: 10px;
-    padding: 0.6rem 0.7rem; margin-bottom: 0.5rem; background: #101010;
+    padding: 0.6rem 0.7rem; margin-bottom: 0.5rem; background: var(--inset);
   }
   .srow { display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.45rem; flex-wrap: wrap; }
   .sname { flex: 1; min-width: 9rem; font-weight: 600; }
@@ -339,7 +339,7 @@
   .bar {
     display: flex; align-items: center; justify-content: space-between; gap: 0.6rem;
     padding: 0.5rem 0.8rem; border-bottom: 1px solid var(--border);
-    background: #101010; flex: none;
+    background: var(--inset); flex: none;
   }
   .view { flex: 1; overflow: auto; padding: 1.1rem 1.3rem; margin: 0; }
   .plain {

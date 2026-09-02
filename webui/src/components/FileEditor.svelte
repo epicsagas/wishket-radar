@@ -123,7 +123,7 @@
     gap: 0.6rem;
     padding: 0.5rem 0.8rem;
     border-bottom: 1px solid var(--border);
-    background: #101010;
+    background: var(--inset);
     flex: none;
   }
   .view {

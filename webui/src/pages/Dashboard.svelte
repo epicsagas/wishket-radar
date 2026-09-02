@@ -155,7 +155,7 @@
   }
   .frow:last-child { border-bottom: none; }
   .fname { display: flex; flex-direction: column; font-size: 0.83rem; }
-  .fbar { height: 8px; background: #101010; border-radius: 999px; overflow: hidden; }
+  .fbar { height: 8px; background: var(--inset); border-radius: 999px; overflow: hidden; }
   .ffill {
     height: 100%;
     background: linear-gradient(90deg, var(--brand), var(--brand-200));

@@ -139,7 +139,7 @@
     padding: 0.9rem 1rem;
     transition: border-color 140ms, opacity 140ms;
   }
-  .item:hover { border-color: hsl(26 73% 51% / 0.35); }
+  .item:hover { border-color: var(--brand-ring); }
   .head { display: flex; align-items: baseline; gap: 0.5rem; flex-wrap: wrap; }
   .ext { color: var(--faint); font-size: 0.78rem; }
   .ext:hover { color: var(--brand-200); }
