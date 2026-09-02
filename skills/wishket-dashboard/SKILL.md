@@ -1,53 +1,52 @@
 ---
 name: wishket-dashboard
-description: 위시켓 로컬 대시보드 webui 실행. 인박스 트리아지(관심/스킵), 지원 파이프라인, 제안서, 내 정보(프로필·포트폴리오), 리포트를 브라우저에서 보고 편집한다. "대시보드", "웹 UI 켜줘", "지원 현황 화면으로 보여줘", "공고 분류할래", "dashboard" 등에 사용.
+description: Launch the Wishket local dashboard web UI. View and manage inbox triage (interested/skip), pipeline stages, proposals, profiles, portfolios, and reports. 위시켓 로컬 대시보드 webui 실행. "대시보드", "웹 UI 켜줘", "지원 현황 화면으로 보여줘", "공고 분류할래", "dashboard" 등에 사용.
 ---
 
-# wishket-dashboard — 로컬 webui 실행
+# wishket-dashboard — Launch Local Web UI
 
-같은 바이너리의 `dashboard` 서브커맨드가 `~/.wishket-radar/` 상태 파일을 읽고 쓰는 webui를 띄운다. 0.0.0.0 바인드 + 토큰 인증. 토큰은 `~/.wishket-radar/dashboard-token`.
+The `dashboard` subcommand of `wishket-mcp` serves a local web UI reading and writing files under `~/.wishket-radar/`. Binds to `0.0.0.0` with token authentication. The token is stored in `~/.wishket-radar/dashboard-token`.
 
-## 1단계: 서버 기동
+## Step 1: Start Server
 
-Bash 백그라운드로:
+Run in background via Bash:
 
 ```bash
 sh "${CLAUDE_PLUGIN_ROOT:-.}/scripts/wishket-mcp" dashboard
 ```
 
-- stdout에 `URL: http://127.0.0.1:8787?token=...`과 LAN 주소가 나온다.
-- 포트 충돌(이미 실행 중)이면 실패한다 — 그러면 기존 인스턴스가 살아 있으니 2단계로 진행.
-- 사용자 지정 포트가 있으면 `--port N` 추가. 머신 내장 브라우저 자동 오픈이 불필요하면 `--no-open`.
+- Stdout prints `URL: http://127.0.0.1:8787?token=...` and LAN addresses.
+- If port conflict occurs (already running), advance directly to Step 2.
+- Support custom ports via `--port N` or disable auto browser launch via `--no-open`.
 
-## 2단계: 확인
+## Step 2: Verification
 
 ```bash
 sleep 1
 curl -fsS -H "Authorization: Bearer $(tr -d '\n' < ~/.wishket-radar/dashboard-token)" http://127.0.0.1:8787/api/state
 ```
 
-- 200이면 성공. 실패하면 토큰 파일 존재 여부와 포트 재확인.
+- HTTP 200 confirms success. If it fails, check token file and port status.
 
-## 3단계: 안내
+## Step 3: User Guide
 
-사용자에게 전달:
+Provide connection links:
+- Local: `http://127.0.0.1:8787?token=<token>` (auto-opens on macOS).
+- LAN / Mobile: `http://<LAN-IP>:8787?token=<token>` (use LAN IP from stdout or `ipconfig getifaddr en0` / `hostname -I`).
+- Token reset: Delete `~/.wishket-radar/dashboard-token` and restart to generate a new token.
 
-- 로컬: `http://127.0.0.1:8787?token=<token>` (macOS에선 기동 시 자동 오픈됨)
-- 폰·다른 기기(LAN): `http://<LAN-IP>:8787?token=<token>` — LAN IP는 기동 stdout에 찍힌 값. 없으면 `ipconfig getifaddr en0`(macOS) / `hostname -I`(Linux).
-- 토큰 분실 시: `~/.wishket-radar/dashboard-token`을 지우고 재기동하면 재발급.
+## Feature Overview
 
-## 기능 안내 (사용자가 물으면)
+- **Inbox**: Triage newly scanned projects into Interested or Skip. Filter by score. Only Interested items proceed to pipeline.
+- **Inbox Detail (`#/inbox/{id}`)**: Open via the title. Shows stored data first. Does not auto-fetch (robots Crawl-delay). "Fetch Details" loads description and conditions from Wishket on demand, then the user triages Interested/Skip.
+- **Dashboard**: Visualizes application funnel, stage conversion rates, D-day deadlines, and recent reports.
+- **Pipeline**: Inline stage editing and next actions. Detail view (`#/pipeline/{id}`) manages stage, notes, and actions on one page.
+- **My Info**: Manage matching profile (`profile.yaml`) and portfolio assets (`portfolios/`) in one unified view.
+- **Proposals**: Grouped per project directory and linked with pipeline details.
+- **Atomic Saves**: Server verifies and performs atomic writes, maintaining a 1-generation `.bak` backup.
+- **Reports**: View scout reports. Analyst fit ratings (A/B/C), cautions, and recommendations link directly to project cards.
 
-- 인박스: 스캔으로 발견된 미분류 공고를 관심/스킵으로 분류. 매칭 점수순 정렬, 점수 필터. 관심만 파이프라인으로 넘어간다
-- 인박스 상세(`#/inbox/{id}`): 제목을 누르면 진입. 저장된 정보를 먼저 보여주고 "상세 불러오기"를 누르면 위시켓에서 설명·조건을 가져온다(자동 조회 없음). 내용을 확인한 뒤 관심/스킵 결정
-- 대시보드: 지원 퍼널·단계별 전환율, 마감 D-day, 최근 리포트
-- 지원 파이프라인: 단계 드롭다운·다음 할 일 인라인 편집. 제목을 누르면 공고별 상세 페이지(`#/pipeline/{id}`)로 이동해 단계·메모·다음 할 일을 한 화면에서 관리
-- 내 정보: 매칭 프로필(항목별 폼 편집)과 포트폴리오를 한 화면에서 관리. 둘 다 "나를 설명하는 자산"이라 같은 층위다
-- 제안서: 공고별로 묶여 있고 파이프라인 상세와 양방향 연결. 공고에 종속된 산출물이다
-- 편집 저장은 서버가 검증·원자 쓰기하며 이전 본문은 `.bak`에 1세대 보관
-- 리포트: 조회 전용. 리포트의 A/B/C 판정·주의점·제안 방향은 인박스 카드와 상세에 자동으로 붙는다
+## Caution
 
-## 주의
-
-- UI에서 편집한 내용은 채팅 스킬(wishket-pipeline 등)이 읽는 같은 파일에 반영된다. 양쪽 중 어느 쪽이 먼저여도 충돌 없음(마지막 쓰기 승리).
-- 서버 종료는 프로세스 종료로만. 포트 기본 8787.
+- Edits in the web UI synchronize with files read by CLI/chat skills (`wishket-pipeline`, etc.) with last-write-wins semantics.
+- Default port is 8787. Terminate server by stopping the process.

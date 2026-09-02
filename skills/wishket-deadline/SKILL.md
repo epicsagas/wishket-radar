@@ -1,31 +1,31 @@
 ---
 name: wishket-deadline
-description: 위시켓 공고 마감을 macOS 캘린더/구글 캘린더에 등록. .ics 파일을 생성해 열어주고, 원하면 AppleScript로 캘린더에 직접 추가한다. "마감 캘린더에 넣어줘", "이 공고 마감 알림 설정", "마감 등록해줘" 등에 사용.
+description: Register Wishket project deadlines into macOS / Google Calendar. Generates .ics files and offers direct AppleScript addition. 위시켓 공고 마감을 macOS 캘린더/구글 캘린더에 등록. "마감 캘린더에 넣어줘", "이 공고 마감 알림 설정", "마감 등록해줘" 등에 사용.
 ---
 
-# wishket-deadline — 마감 캘린더 등록
+# wishket-deadline — Register Project Deadlines to Calendar
 
-## 흐름
+## Flow
 
 ```mermaid
 flowchart LR
-    A[공고/지원 항목] --> B[마감일·제목·URL 확보]
-    B --> C[.ics 생성]
-    C --> D[open으로 임포트]
-    D --> E{직접 추가 요청?}
-    E -- yes --> F[osascript]
+    A[Project / Application Item] --> B[Extract deadline, title, URL]
+    B --> C[Generate .ics]
+    C --> D[Open to import]
+    D --> E{Direct addition requested?}
+    E -- Yes --> F[Execute osascript]
 ```
 
-## 1단계: 정보 확보
+## Step 1: Extract Information
 
-- 공고 ID/URL이면 `get_project`에서 마감일·제목 확보.
-- applications.yaml 항목(wishket-pipeline 경유)이면 `deadline`, `title`, `url` 필드 사용.
-- 마감 시각 정보가 없으면 마감일 자체를 종일 이벤트로.
-- 마감일이 이미 지난 경우 등록하지 않고 안내만.
+- For project ID/URL, fetch deadline and title via `get_project`.
+- For `applications.yaml` entries (via `wishket-pipeline`), use `deadline`, `title`, and `url` fields.
+- If specific time is absent, create an all-day event.
+- If the deadline has already passed, notify the user without creating an event.
 
-## 2단계: .ics 생성 (기본 경로)
+## Step 2: Generate .ics (Default Path)
 
-`~/.wishket-radar/deadlines/`에 생성 (디렉터리 없으면 mkdir). macOS 캘린더와 구글 캘린더(웹 임포트) 양쪽에서 쓸 수 있는 공통 포맷이다.
+Write to `~/.wishket-radar/deadlines/<id>.ics` (create directory if missing). Compatible with macOS Calendar and Google Calendar:
 
 ```bash
 printf '%s\r\n' \
@@ -38,8 +38,8 @@ printf '%s\r\n' \
   "DTSTAMP:$(date -u +%Y%m%dT%H%M%SZ)" \
   "DTSTART;VALUE=DATE:YYYYMMDD" \
   "DTEND;VALUE=DATE:YYYYMMDD" \
-  "SUMMARY:[위시켓 마감] <제목>" \
-  "DESCRIPTION:<공고 URL>" \
+  "SUMMARY:[위시켓 마감] <Title>" \
+  "DESCRIPTION:<Project URL>" \
   "BEGIN:VALARM" \
   "TRIGGER:-P1D" \
   "ACTION:DISPLAY" \
@@ -50,30 +50,28 @@ printf '%s\r\n' \
   > ~/.wishket-radar/deadlines/<id>.ics
 ```
 
-규칙:
+### Formatting Rules:
+- RFC 5545 compliant: CRLF line endings, `DTEND` as day after deadline for all-day events (exclusive end).
+- Fixed UID `wishket-<id>@wishket-radar` ensures updates overwrite the same event.
+- Default reminder: 1 day prior (`-P1D`). Add 3-day reminder (`-P3D`) if requested.
 
-- RFC 5545 준수: CRLF 줄바꿈, 종일 이벤트는 DTEND를 마감 다음날로( exclusive end).
-- UID를 `wishket-<id>@wishket-radar`로 고정하면 재생성해도 같은 이벤트로 갱신된다.
-- SUMMARY에는 제목을 짧게. DESCRIPTION에 URL.
-- 알림은 마감 1일 전 기본. 마감 3일 전 추가를 원하면 VALARM 블록(`TRIGGER:-P3D`) 하나 더.
+## Step 3: Registration
 
-## 3단계: 등록
-
-- 기본: `open ~/.wishket-radar/deadlines/<id>.ics` — macOS 캘린더 임포트 창이 열린다. 사용자가 캘린더 선택해 확인.
-- 구글 캘린더 사용자: calendar.google.com의 설정 > 캘린더 가져오기에 같은 파일을 올리도록 안내. `gcal` CLI가 설치되어 있으면 그걸 써도 됨.
-- AppleScript 직접 추가(임포트 클릭 없이)를 원하면:
+- Default: `open ~/.wishket-radar/deadlines/<id>.ics` opens the native macOS Calendar import prompt.
+- Google Calendar: Instruct user to import the file under Calendar Settings > Import & Export, or use `gcal` CLI if present.
+- Direct AppleScript import (without clicking import):
 
 ```bash
 osascript - <<'EOF'
 tell application "Calendar"
-  make new event at end of events of calendar "<캘린더명>" with properties {summary:"[위시켓 마감] <제목>", start date:date "<YYYY-MM-DD HH:MM:SS>", end date:date "<YYYY-MM-DD HH:MM:SS>", allday event:true, description:"<URL>"}
+  make new event at end of events of calendar "<CalendarName>" with properties {summary:"[위시켓 마감] <Title>", start date:date "<YYYY-MM-DD HH:MM:SS>", end date:date "<YYYY-MM-DD HH:MM:SS>", allday event:true, description:"<URL>"}
 end tell
 EOF
 ```
 
-캘린더명은 먼저 `osascript -e 'tell application "Calendar" to get name of calendars'`로 목록을 보여주고 사용자가 고르게 한다. 로케일에 따라 date 문자열 파싱이 달라질 수 있으니 실패 시 .ics 경로로 안내한다.
+List available calendars via `osascript -e 'tell application "Calendar" to get name of calendars'` and let the user pick one. Date-string parsing varies by locale; if AppleScript fails, fall back to the `.ics` path.
 
-## 4단계: 완료 보고
+## Step 4: Completion Report
 
-- 등록된 이벤트 요약(제목, 마감일, 알림 시점)과 파일 경로 전달.
-- wishket-pipeline 항목에서 온 경우 note에 "캘린더 등록 완료" 한 줄 추가.
+- Report registered event summary (title, deadline, reminder time) and file path.
+- If called from `wishket-pipeline`, append "캘린더 등록 완료" note to the application item.

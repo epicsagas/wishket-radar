@@ -1,11 +1,11 @@
 ---
 name: wishket-profile
-description: 매칭용 기술 프로필 조회/편집. "내 위시켓 프로필 보여줘", "rust 가중치 올려줘", "react 스킬 추가", "매칭 기준 바꿔줘" 등에 사용.
+description: View or edit technical matching profile. Use when asked to view Wishket profile, change skill weights, add/remove skills, or update matching criteria. 매칭용 기술 프로필 조회/편집. "내 위시켓 프로필 보여줘", "rust 가중치 올려줘", "react 스킬 추가", "매칭 기준 바꿔줘" 등에 사용.
 ---
 
-매칭 기준 프로필 관리. 파일: `~/.wishket-radar/profile.yaml` (`WISHKET_PROFILE` 환경변수로 오버라이드).
+Manage the technical profile used for Wishket project matching. Target file: `~/.wishket-radar/profile.yaml` (overridden by `WISHKET_PROFILE` environment variable if set).
 
-- 조회 요청: profile.yaml 내용을 표 혹은 목록으로 요약 출력 (스킬, weight, keywords, roles, notes).
-- 변경 요청 ("rust 가중치 올려줘", "react 추가", "flutter 빼줘"): Read 후 Edit/Write로 profile.yaml 수정.
-- 수정 즉시 다음 스캔에 반영됨(서버 재시작 불필요)을 안내.
-- 산식: score = 100 × 매칭 weight 합 / 전체 weight 합.
+- **View requests**: Summarize and display `profile.yaml` contents as a table or list (skills, weights, keywords, roles, notes).
+- **Edit requests** (e.g., "increase Rust weight", "add React", "remove Flutter"): Read `profile.yaml`, then update it via Edit/Write tools.
+- Inform the user that modifications take effect immediately on the next scan (no server restart required).
+- Formula: `score = 100 * sum(matched weights) / sum(total weights)`.

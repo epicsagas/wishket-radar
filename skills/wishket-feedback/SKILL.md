@@ -1,47 +1,47 @@
 ---
 name: wishket-feedback
-description: 지원 결과 데이터로 매칭 프로필을 보정. applications.yaml의 등급별 수주율을 분석해 profile.yaml 키워드/가중치 조정을 제안한다. "매칭 잘 안 되네", "프로필 점검해줘", "수주율 높여줘", "피드백 분석" 등에 사용.
+description: Calibrate matching profile using historical application outcomes. Analyzes win rates by grade in applications.yaml to suggest profile.yaml adjustments. 지원 결과 데이터로 매칭 프로필 보정. "매칭 잘 안 되네", "프로필 점검해줘", "수주율 높여줘", "피드백 분석" 등에 사용.
 ---
 
-# wishket-feedback — 수주 결과 기반 프로필 보정
+# wishket-feedback — Profile Calibration via Application Outcomes
 
-## 흐름
+## Flow
 
 ```mermaid
 flowchart LR
-    A[applications.yaml] --> B{표본 충분?}
-    B -- 5건 미만 --> Z[부족 통보 + 데이터 수집 안내]
-    B -- 충분 --> C[등급·스택별 수주율 대조]
-    C --> D[변칙 탐색]
-    D --> E[조정 제안]
-    E --> F{사용자 승인}
-    F -- 승인 --> G[profile.yaml Edit]
+    A[applications.yaml] --> B{Sufficient sample?}
+    B -- Under 5 items --> Z[Notify insufficient data]
+    B -- 5+ items --> C[Cross-analyze win rates by grade/stack]
+    C --> D[Detect anomalies]
+    D --> E[Propose adjustments]
+    E --> F{User approval}
+    F -- Approved --> G[Edit profile.yaml]
 ```
 
-## 1단계: 데이터 확보
+## Step 1: Gather Data
 
-- `~/.wishket-radar/applications.yaml` 읽기. 종결(체결 이상/미체결/탈락) 항목이 5건 미만이면 분석하지 않고 종결. "지원 결과를 계속 기록하면 패턴이 보인다"고 안내하고 종료.
-- 종결 항목만 분석 대상. 진행 중(관심/지원/상담/미팅)은 제외.
-- 단계별 전환율을 먼저 본다. 최종 수주율만 보면 어느 구간이 문제인지 안 보인다.
+- Read `~/.wishket-radar/applications.yaml`. If there are fewer than 5 closed items (`체결`, `진행 중`, `완료`, `미체결`, `탈락`), terminate analysis and advise collecting more outcome data first.
+- Analyze only closed items; exclude in-progress states (`관심`, `지원`, `상담`, `미팅`).
+- Check step-by-step conversion rates before overall win rates.
 
-## 2단계: 변칙 탐색
+## Step 2: Anomaly Detection
 
-등급(scout 판정)과 실제 결과의 괴리를 찾는다:
+Identify discrepancies between scout fit grades and actual outcomes:
 
-- **A등급 체결율 < B등급 체결율**: 매칭 스코어가 실제와 어긋남. A등급 공고의 공통 키워드 중 프로필에 높은 weight를 준 키워드가 오탐일 가능성. 해당 키워드 weight 하향 또는 키워드 분리 제안.
-- **특정 스택 공고만 연속 거절**: 그 스택 경험이 약하거나 시장 단가·경쟁 문제. 프로필에서 weight 하향 또는 roles에서 제외 제안.
-- **특정 키워드 공고만 연속 수주**: 강점. weight 상향 또는 관련 동의어 키워드 추가 제안.
-- **지원은 하는데 상담으로 안 넘어감**: 위시켓 매니저 선발에서 걸림. 제안 금액·기간이 비현실적이거나 제안서가 약함. wishket-apply·wishket-quote 점검. 프로필 조정 아님.
-- **미팅까지 가고 체결이 안 됨**: 매칭은 맞지만 조건 협상 문제. 견적 기준 재검토(wishket-quote). 프로필 조정 아님.
+- **Grade A win rate < Grade B win rate**: Matching score misaligned. Over-weighted keywords in Grade A announcements may be false positives. Suggest lowering weights or splitting keywords.
+- **Consistent rejections on specific stack**: Weak experience or competitive market rate issues. Suggest lowering weight or removing from `roles`.
+- **Consistent wins on specific keyword**: Core strength. Suggest increasing weight or adding related synonyms.
+- **Applications stalled before manager consulting**: Wishket manager screening issue. Proposed price/duration may be unrealistic or proposals need strengthening. Check `wishket-apply` and `wishket-quote` (not a profile issue).
+- **Stalled at client meetings**: Terms negotiation issue. Re-evaluate quoting strategy via `wishket-quote` (not a profile issue).
 
-## 3단계: 제안 적용
+## Step 3: Apply Adjustments
 
-- 조정안은 항목별로: 현재 값, 제안 값, 근거(데이터에서 몇 건의 어떤 패턴), 예상 효과 한 줄.
-- 근거 없는 조정 금지. 표본이 적은 패턴(2건 이하)은 "경향"으로만 언급하고 조정하지 않는다.
-- 사용자가 승인한 항목만 Edit으로 profile.yaml 반영. 자동 반영 금지.
-- 반영 후 "다음 스캔부터 즉시 적용됨(서버 재시작 불필요)" 안내.
+- Detail each proposed adjustment: Current value, Proposed value, Evidence (count/pattern in data), Expected outcome.
+- Never propose adjustments without data evidence. Treat <=2 occurrences as observations only.
+- Only edit `profile.yaml` upon explicit user confirmation.
+- Inform that changes take effect immediately on next scan without server restart.
 
-## 주의
+## Caution
 
-- 원인이 프로필 밖(제안 금액, 시기, 경쟁)일 수 있음을 항상 언급. 매칭 로직 탓으로 단정 금지.
-- profile.yaml 상단 주석(출처)은 보존한다.
+- Highlight that external factors (pricing, market timing, competition) may be the root cause; do not assume matching logic flaws alone.
+- Preserve header comments in `profile.yaml`.

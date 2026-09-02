@@ -1,15 +1,15 @@
 ---
 name: wishket-scan
-description: 위시켓 신규 프로젝트 diff 스캔 (마지막 스캔 이후 신규만). "위시켓 스캔", "새 프로젝트 있어?", "새 외주 올라온 거 있나?" 등에 사용. 심층 분석·리포트는 wishket-scout.
+description: Diff scan for new Wishket projects registered since the last scan. Use for quick new project checks. 위시켓 신규 프로젝트 diff 스캔 (마지막 스캔 이후 신규만). "위시켓 스캔", "새 프로젝트 있어?", "새 외주 올라온 거 있나?" 등에 사용. 심층 분석·리포트는 wishket-scout.
 ---
 
-위시켓 신규 프로젝트 diff 스캔. `scan_new` MCP 도구 1회 호출로 마지막 스캔 이후 신규 프로젝트만 반환 (신규는 seen 캐시에 기록).
+Diff scan for new Wishket projects. Calls the `scan_new` MCP tool once to return only projects posted since the last scan (new items are recorded to the `seen` cache).
 
-1. 요청에 키워드·카테고리 언급이 있으면 인자로 반영, 없으면 기본값 (development, web,pc,android,ios, 3페이지).
-2. 결과 요약: 신규 N건 (`new_count`), 스코어 순 목록. `baseline: true`면 베이스라인 스캔임을 안내.
-3. `new_count == 0`이면 마지막 스캔 시각(`~/.wishket-radar/state.json`의 `last_scan`)과 함께 "신규 없음"만 응답.
-4. 심층 분석·리포트가 필요하면 wishket-scout 스킬로 확장 제안.
+1. If the request specifies keywords or categories, pass them as arguments; otherwise use defaults (`development`, `web,pc,android,ios`, `3` pages).
+2. Summarize results: new count (`new_count`) and list sorted by match score. If `baseline: true`, notify the user that this was a baseline scan.
+3. If `new_count == 0`, report "No new projects" along with the timestamp of the last scan (`last_scan` from `~/.wishket-radar/state.json`).
+4. If deep analysis or a full report is needed, suggest expanding via the `wishket-scout` skill.
 
-## 이후 흐름
+## Workflow After Scan
 
-스캔된 공고는 `state.json`에 쌓이며 분류 전까지 대시보드 **인박스**에 남는다. 관심/스킵 분류는 대시보드(wishket-dashboard)에서 하는 게 빠르고, 관심 표시한 것만 지원 파이프라인으로 넘어간다.
+Scanned projects accumulate in `state.json` and remain in the dashboard **Inbox** until triaged. Triaging (Interested vs. Skip) is quickest via the web UI (`wishket-dashboard`), and only items marked as Interested proceed into the application pipeline.

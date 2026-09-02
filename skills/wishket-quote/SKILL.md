@@ -1,67 +1,66 @@
 ---
 name: wishket-quote
-description: 위시켓 공고 견적 산출. 요구사항 문서나 공고 상세를 기능 단위로 분해해 공수(인일)를 추정하고 하한/기본/상한 견적을 제시한다. "견적 계산해줘", "이 공고 얼마 정도 불러야 해?", "공수 산정", "견적 잡아줘" 등에 사용. 휴리스틱 기반이며 최종 판단은 사용자.
+description: Estimate project cost and man-days for Wishket postings. Decomposes project requirements into functional units and provides low/standard/high estimates. 위시켓 공고 견적 산출. "견적 계산해줘", "이 공고 얼마 정도 불러야 해?", "공수 산정", "견적 잡아줘" 등에 사용. 휴리스틱 기반 견적.
 ---
 
-# wishket-quote — 견적·공수 산출
+# wishket-quote — Project Cost & Man-day Estimation
 
-## 전제
+## Premise
 
-시장 단가 데이터베이스가 없다. 이 스킬은 **기능 분해 + 휴리스틱 공수 계수**로 범위를 잡아주는 도구이지 정확한 시세가 아니다. 결과에는 항상 "휴리스틱 추정, 사용자 조정 필수"를 명시한다.
+This skill uses **functional decomposition + heuristic effort coefficients** to establish an estimation baseline. It is not an absolute market rate. Always label results with "Heuristic estimate; user adjustment required".
 
-## 흐름
+## Flow
 
 ```mermaid
 flowchart LR
-    A[공고 상세/요구사항 문서] --> B[기능 분해]
-    B --> C[난이도별 인일 배당]
-    C --> D[버퍼·리스크 가산]
-    D --> E[하/기본/상한 견적]
-    E --> F{공고 예산 있음?}
-    F -- 있음 --> G[예산 대비 판정]
+    A[Project details / Requirement doc] --> B[Functional decomposition]
+    B --> C[Assign man-days by complexity]
+    C --> D[Add risk & buffer factors]
+    D --> E[Low / Standard / High quotes]
+    E --> F{Project budget specified?}
+    F -- Yes --> G[Evaluate against budget]
 ```
 
-## 1단계: 입력
+## Step 1: Input
 
-- 공고 ID/URL이면 `get_project`. 예산·기간·투입 정보를 확보. `state.json`의 `seen[<id>].description`에 캐시가 있으면 그걸 먼저 쓴다.
-- 요구사항 문서(PDF/PPT/DOCX)면 wishket-portfolio와 동일 방식으로 텍스트 추출 후 분석.
-- 둘 다 없으면 사용자에게 기능 목록을 구두로 받는다.
+- Project ID/URL: Fetch via `get_project`. Check `state.json` cache `seen[<id>].description` first if available.
+- Requirement Document (PDF/PPT/DOCX): Extract text following `wishket-portfolio` extraction methods.
+- Fallback: Ask user for verbal/bullet list of features.
 
-## 2단계: 기능 분해
+## Step 2: Functional Decomposition
 
-요구사항을 실행 가능한 단위로 쪼갠다. 각 기능에 역할 태그(화면/백엔드/인프라/디자인/연동)를 붙인다. 범위 박인 것(예: 운영·유지보수, 마케팅)은 별도 표기.
+Break down requirements into actionable units. Tag each feature with role components (UI, Backend, Infra, Design, Integration). Explicitly mark out-of-scope items (e.g., Maintenance, Marketing).
 
-## 3단계: 공수 배당 (휴리스틱)
+## Step 3: Man-day Allocation (Heuristic)
 
-기능당 인일을 난이도 3단계로:
+Classify man-days per feature into 3 complexity levels (single developer basis):
 
-| 난이도 | 기준 | 인일 (1인 기준) |
+| Complexity | Criteria | Man-days |
 |---|---|---|
-| 단순 | CRUD 1건, 기존 패턴 재사용 | 1-2일 |
-| 보통 | 신규 화면+API, 일반 연동(PG, SSO) | 3-5일 |
-| 복잡 | 알고리즘/RAG 파이프라인/결제 정산/성능 튜닝 | 7-15일 |
+| Simple | Single CRUD, reusing existing pattern | 1-2 days |
+| Medium | New screen + API, standard integrations (PG, SSO) | 3-5 days |
+| Complex | Algorithms, RAG pipelines, settlement engines, performance tuning | 7-15 days |
 
-교정 계수:
+Adjustment Multipliers:
+- Ambiguous specs or heavy "to be decided" items: +30%.
+- Legacy codebase analysis required: +15%.
+- External 3rd party coordination dependencies: +15%.
+- Testing, deployment, buffer: +20% base on development subtotal.
 
-- 요구사항이 불명확하거나 "상의 후 확정"이 많으면 +30%.
-- 레거시 분석 필요(기존 코드 파악 후 개발) +15%.
-- 외부 업체 연동(일정 통제 불가) +15%.
-- 테스트·배포·버퍼: 개발 합계의 +20% 기본.
+## Step 4: Cost Calculation
 
-## 4단계: 견적
+- Ask the user for their daily rate in 만원 per man-day. Do not assume a default rate. If unknown, report man-days only and ask for the rate before converting to KRW. Quote KRW = man-days × (만원/인일) × 10,000.
+- 3 Tiers: Lower bound (excluding buffer), Standard (default), Upper bound (all risk buffers included).
+- Comparison with posting budget: Within budget / Borderline (80-120% of budget) / Exceeded (suggest scope cuts).
+- If budget exceeded, offer feature prioritization cuts.
 
-- 총 인일 × 사용자 단가(만원/인일). 단가는 물어본다. 모르면 인일만 제시하고 단가 입력 요청.
-- 3안: 하한(버퍼 제외), 기본, 상한(모든 가산 포함).
-- 공고 예산이 있으면 대비 판정: 예산 내 / 경계(기본안이 예산 80-120%) / 초과(대폭 절감 or 부분 범위 축소 제안).
-- 초과면 범위 축소안(기능 우선순위 컷)을 같이 제시.
+## Step 5: Output
 
-## 5단계: 출력
+- Plain text table (compatible with Wishket forms and chat): Feature | Complexity | Man-days.
+- Total man-days, 3 tier estimates, budget comparison, and stated assumptions (daily rate, excluded items).
+- If proceeding to `wishket-apply`, use standard estimate as temporary budget figure.
 
-- 일반 텍스트 표(마크다운 아님, 위시켓 지원 폼·채팅 양쪽 대응): 기능 | 난이도 | 인일.
-- 총 인일, 견적 3안, 예산 대비 판정, 가정(단가, 제외 항목) 명시.
-- wishket-apply가 이어지면 제안서의 제안 금액란에 기본안을 임시 표기.
+## Caution
 
-## 주의
-
-- 산출 근거(각 기능 인일 배당 이유)를 한 줄씩 남겨 사용자가 조정할 수 있게.
-- 사용자가 실제 경험치(예: "이런 PG 연동은 보통 2일")를 주면 그걸 우선 반영하고 계수 표를 갱신.
+- Provide a 1-line rationale for each feature's man-day allocation so the user can adjust easily.
+- If the user provides empirical experience figures (e.g., "PG integration takes 2 days for me"), prioritize their input and update the coefficient table for this run.

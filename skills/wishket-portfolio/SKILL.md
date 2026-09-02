@@ -1,88 +1,88 @@
 ---
 name: wishket-portfolio
-description: 위시켓 포트폴리오 등록 폼 작성. 사이트 URL, GitHub repo, 요구사항 문서(PDF/PPT 등), 프로젝트 폴더를 입력받아 분석 후 위시켓 입력 폼 양식에 맞춘 일반 텍스트 초안을 만든다. "포트폴리오 작성해줘", "위시켓 포트폴리오 만들어줘", "이 프로젝트로 포트폴리오 써줘" 등에 사용.
+description: Draft Wishket portfolio entries. Analyzes site URLs, GitHub repositories, requirement documents (PDF/PPT/DOCX/XLSX), or project folders to generate formatted plain-text portfolio drafts. 위시켓 포트폴리오 등록 폼 작성. "포트폴리오 작성해줘", "위시켓 포트폴리오 만들어줘", "이 프로젝트로 포트폴리오 써줘" 등에 사용.
 ---
 
-# wishket-portfolio — 위시켓 포트폴리오 등록 폼 작성
+# wishket-portfolio — Wishket Portfolio Draft Generator
 
-## 흐름
+## Flow
 
 ```mermaid
 flowchart LR
-    A[입력 수집: URL/repo/문서/폴더] --> B[자료 분석]
-    B --> C{필수 정보 부족?}
-    C -- 있음 --> D[AskUserQuestion]
+    A[Collect inputs: URL/repo/docs/folder] --> B[Analyze materials]
+    B --> C{Missing required info?}
+    C -- Yes --> D[AskUserQuestion]
     D --> E
-    C -- 없음 --> E[폼 양식 초안 작성]
-    E --> F[검증: 금지정보/글자수]
-    F --> G[portfolios/ 저장 + 요약]
+    C -- No --> E[Draft plain-text form]
+    E --> F[Validate: prohibited info / char limits]
+    F --> G[Save to portfolios/ + Summary]
 ```
 
-## 1단계: 입력 수집
+## Step 1: Input Collection
 
-사용자가 제시한 자료 유형별로:
+Extract context by input type:
 
-- **사이트 URL**: WebFetch 또는 web_reader MCP로 메인·주요 페이지 내용 파악. 서비스 정체, 기능, 타깃 확인.
-- **GitHub repo URL**: WebFetch로 repo 페이지(README) 확인. 추가로 `package.json` / `Cargo.toml` / `pubspec.yaml` / `requirements.txt` / `go.mod` 등 매니페스트 원시 URL을 WebFetch해 기술 스택 확정.
-- **요구사항 문서 (PDF/PPT/DOCX/XLSX)**:
-  - PDF: Read 도구로 직접 읽음.
-  - PPTX: `unzip -p <file>.pptx 'ppt/slides/*.xml' | sed -e 's/<[^>]*>/ /g'`로 텍스트 추출.
+- **Live URL**: Fetch main pages via WebFetch or browser tools. Identify service purpose, key features, target audience.
+- **GitHub Repository**: Fetch README and raw manifest files (`package.json`, `Cargo.toml`, `pubspec.yaml`, `requirements.txt`, `go.mod`) to confirm tech stack.
+- **Requirement Documents (PDF/PPT/DOCX/XLSX)**:
+  - PDF: Read directly.
+  - PPTX: `unzip -p <file>.pptx 'ppt/slides/*.xml' | sed -e 's/<[^>]*>/ /g'`.
   - DOCX: `unzip -p <file>.docx word/document.xml | sed -e 's/<[^>]*>/ /g'`.
   - XLSX: `unzip -p <file>.xlsx 'xl/sharedStrings.xml' | sed -e 's/<[^>]*>/ /g'`.
-  - 추출 실패 시 사용자에게 텍스트 붙여넣기 요청.
-- **프로젝트 폴더**: README, 매니페스트, 디렉터리 구조 위주로 탐색(전수조사 불필요). 주 기술·아키텍처·핵심 기능 파악.
+  - Fallback: Request text copy-paste from user if extraction fails.
+- **Local Project Folder**: Inspect README, manifests, and directory tree. Identify core architecture and features.
 
-여러 소스가 섞이면 교차 검증: 실제 사용 기술은 코드/매니페스트 우선, 비즈니스 맥락은 요구사항 문서·사이트 우선.
+Cross-validate multi-source inputs: Code/manifests take precedence for tech stack; requirement docs/websites take precedence for business context.
 
-## 2단계: 필수 정보 확인
+## Step 2: Verify Required Information
 
-코드에서 유추 불가능한 필드는 지어내지 말고 AskUserQuestion으로 물은 뒤 반영:
+Never invent fields that cannot be inferred from code. Inquire via `AskUserQuestion`:
 
-- 참여 기간 (시작/종료 연월)
-- 참여율 (%)
-- 고객사 / 본인 역할
-- 정량 성과 수치 (없으면 성과 항목에서 제외하거나 정성 서술로 대체)
-- 업무 범위(카테고리) 및 분야 후보 중 최종 선택 (분야는 최대 3개)
+- Participation period (Start / End YYYY.MM)
+- Contribution rate (%)
+- Client name / User role
+- Quantitative metrics (if none, omit from accomplishments or use qualitative phrasing)
+- Category & Domain field selection (up to 3 fields)
 
-유추 가능한 필드(제목, 기술, 상세, 배경, 핵심 기능, 진행 단계)는 초안을 먼저 만들고 사용자 수정을 받는다.
+Inferrable fields (Title, Tech, Details, Background, Core Features, Phases) should be drafted first for user review.
 
-## 3단계: 초안 작성 규칙
+## Step 3: Drafting Rules
 
-**출력은 전부 일반 텍스트(마크다운 아님).** 각 필드 값에 `#`, `**`, `` ` ``, 표 문법 등 마크다운 기호 금지. 목록은 `-` 또는 `1)` 형식만.
+**Output must be Plain Text (NOT Markdown).** Do not include `#`, `**`, `` ` ``, or markdown tables. Use `-` or `1)` for lists.
 
-- **포트폴리오 제목**: "무엇을 구축해 무슨 효과를 냈는가" 형식. 예시 톤: "LMS와 연동 AI 챗봇 구축으로 대응 시간 단축". 정량 지표가 있으면 포함.
-- **업무 범위(카테고리) / 분야**: 분석 결과에서 후보 제안, 사용자가 확정. 분야 최대 3개.
-- **관련 기술**: 쉼표 구분 (예: React, Node.js, AWS). 매니페스트에서 확인된 것만. 버전은 생략.
-- **프로젝트 상세**: 배경, 과정, 기술적 이슈, 해결 방안 순으로 문단 구성. 정량 지표 우선 포함.
-- **프로젝트 배경**: 1) 문제점 2) 목표 3) 주안점 구조(폼 예시 형식 준수).
-- **성과 / 진행 단계 / 핵심 기능의 설명**: 각 최대 120자. 초과분은 작성 후 잘라내며 문장이 끊기지 않게 정리.
-- **진행 단계**: 시간순. 단계명은 짧게(예: 기획, 설계, 개발, 테스트, 런칭), 설명에 산출물·범위.
-- **핵심 기능**: 기능명 짧게, 설명은 동작 방식 1문장.
+- **Portfolio Title**: Format as "What was built and what outcome was achieved" (e.g., "LMS 연동 AI 챗봇 구축으로 고객 대응 시간 단축"). Include metrics if present.
+- **Category / Domain**: Propose candidates; user confirms. Maximum 3 domains.
+- **Related Tech**: Comma-separated (e.g., React, Node.js, AWS). Only confirmed manifest technologies, omitting versions.
+- **Project Details**: Paragraphs structured as: Background -> Process -> Technical Challenges -> Solutions. Prioritize quantitative indicators.
+- **Project Background**: 1) Problem 2) Goal 3) Key Focus.
+- **Accomplishments / Phases / Feature Descriptions**: Max 120 Korean characters each. Trim cleanly without truncating sentences mid-thought.
+- **Phases**: Chronological order with concise phase names (e.g., 기획, 설계, 개발, 테스트, 런칭) and deliverables in description.
+- **Core Features**: Brief feature name + 1-sentence explanation of behavior.
 
-**금지 정보 검증 (마지막 폼 경고 준수)**: 이메일, 전화번호, 회사명, 회사 홈페이지 등 외부 연락 수단이 초안 어디에도 있으면 제거. 개인정보도 동일. 사용자가 제공한 고객사명은 "고객사" 필드에만 들어가고 상세 본문에는 넣지 않는다.
+**Prohibited Information Check (Wishket compliance)**: Strip all external contact information (emails, phone numbers, external company websites, personal info). Client names appear only in the Client field, not inside body text.
 
-## 4단계: 출력
+## Step 4: Output
 
-파일 저장: `~/.wishket-radar/portfolios/YYYY-MM-DD-<slug>.md` (디렉터리 없으면 생성).
+Save path: `~/.wishket-radar/portfolios/YYYY-MM-DD-<slug>.md` (create directory if missing).
 
-포트폴리오는 특정 공고에 종속되지 않는 재사용 자산이므로 **파일명에 공고 ID를 넣지 않는다** (제안서와 반대). 대시보드에서는 "내 정보 > 포트폴리오" 탭에 프로필과 나란히 표시된다.
+Portfolios are reusable assets not tied to specific project IDs, so **do not include project IDs in the filename** (unlike proposals).
 
-본문은 아래 양식 그대로:
+Content format:
 
 ```text
 위시켓 포트폴리오 초안 — YYYY-MM-DD
 
 [포트폴리오 제목]
-{제목}
+{Title}
 
 [업무 범위(카테고리)]
-{카테고리}
+{Category}
 
 [포트폴리오 분야] (최대 3개)
-{분야1}, {분야2}
+{Field 1}, {Field 2}
 
 [관련 기술]
-{기술1}, {기술2}, ...
+{Tech 1}, {Tech 2}, ...
 
 [참여 기간]
 시작: YYYY.MM
@@ -90,12 +90,12 @@ flowchart LR
 참여율: NN%
 
 [고객사 및 역할]
-고객사: {고객사}
-역할: {역할}
+고객사: {Client}
+역할: {Role}
 결과물 URL: {URL}
 
 [프로젝트 상세]
-{본문}
+{Body}
 
 [프로젝트 배경]
 1) 문제점
@@ -106,18 +106,18 @@ flowchart LR
 - ...
 
 [프로젝트 성과]
-1. {성과명}
-   {설명 120자 이내}
+1. {Achievement Name}
+   {Description <= 120 chars}
 2. ...
 
 [진행 단계]
-1. {단계명} (YYYY.MM)
-   {설명 120자 이내}
+1. {Phase Name} (YYYY.MM)
+   {Description <= 120 chars}
 2. ...
 
 [핵심 기능]
-1. {기능명}
-   {설명 120자 이내}
+1. {Feature Name}
+   {Description <= 120 chars}
 2. ...
 
 [직접 등록 필요]
@@ -126,10 +126,10 @@ flowchart LR
 - 핵심 기능별 이미지 (기능당 최대 3장)
 ```
 
-채팅에는 전문 대신 요약: 제목, 기술 스택, 핵심 기능 개수, 사용자 확인이 필요한 항목(추측 포함 필드), 저장 경로.
+Chat output: Provide summary only (Title, Tech Stack, Feature count, Items requiring confirmation, File path).
 
-## 주의
+## Caution
 
-- 성과 수치는 사용자 확인 없이 창작 금지. 요구사항 문서에 있더라도 "달성"이 아니라 "목표"면 목표로 표기.
-- 참여 기간·참여율·고객사는 어떤 소스에도 없으면 반드시 질문.
-- 이미지 등록은 자동화 불가. 초안 말미에 수동 등록 항목 안내.
+- Do not invent accomplishment metrics without user confirmation. If requirement docs state targets, mark them as "목표" rather than "달성".
+- If participation period, contribution rate, or client name is missing from every source, ask before saving.
+- Image assets cannot be automated; note manual upload requirements at the bottom of the draft.

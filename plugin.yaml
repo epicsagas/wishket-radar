@@ -10,8 +10,15 @@ author:
 # Hermes discovers bundled skills via ctx.register_skill() in __init__.py;
 # this list documents them so forge doctor can verify the bundle.
 provides_skills:
-  - wishket-scout
-  - wishket-scan
-  - wishket-search
-  - wishket-profile
+  - wishket-apply
+  - wishket-dashboard
+  - wishket-deadline
+  - wishket-feedback
   - wishket-onboard
+  - wishket-pipeline
+  - wishket-portfolio
+  - wishket-profile
+  - wishket-quote
+  - wishket-scan
+  - wishket-scout
+  - wishket-search

@@ -1,51 +1,51 @@
 ---
 name: wishket-scout
-description: 위시켓 신규 공고 심층 분석·리포트. scan_new로 신규를 조회한 뒤 상위 후보를 wishket-analyst로 분석해 한국어 리포트를 작성한다. "위시켓 분석", "스카우트", "리포트 뽑아줘", "심층 분석해줘" 등에 사용. 목록만 보려면 wishket-scan.
+description: In-depth analysis and report generation for new Wishket projects. Scans new projects, analyzes top candidates via wishket-analyst, and creates a report. 위시켓 신규 공고 심층 분석·리포트. "위시켓 분석", "스카우트", "리포트 뽑아줘", "심층 분석해줘" 등에 사용. 목록만 보려면 wishket-scan.
 ---
 
-# wishket-scout — 위시켓 프로젝트 스카우트
+# wishket-scout — Wishket Project Scout & Analysis
 
-## 흐름
+## Flow
 
 ```mermaid
 flowchart LR
-    A[scan_new MCP 호출] --> B{신규 있음?}
-    B -- 없음 --> Z[요약만 응답]
-    B -- 있음 --> C[점수 상위 N개 선별]
-    C --> D[get_project 순차]
-    D --> E[wishket-analyst]
-    E --> F[reports/ 저장 + 채팅 요약]
+    A[Call scan_new MCP] --> B{Any new projects?}
+    B -- No --> Z[Return summary]
+    B -- Yes --> C[Select top N candidates]
+    C --> D[Sequential get_project]
+    D --> E[wishket-analyst dispatch]
+    E --> F[Save to reports/ + Chat summary]
 ```
 
-## 1단계: 스캔
+## Step 1: Scan
 
-MCP 도구 `wishket` 서버의 `scan_new` 호출. 인자를 생략해도 서버가 `category=development`, `form_factors=web,pc,android,ios`, `max_pages=3`을 넣는다. 사용자가 지정한 값이 있으면 그걸 쓴다.
+Call `scan_new` on the `wishket` MCP server. Default parameters (`category=development`, `form_factors=web,pc,android,ios`, `max_pages=3`) apply automatically unless specified by the user.
 
-- 사용자가 키워드를 지정했으면 `keyword` 추가.
-- 첫 실행(`baseline: true`)이면 모든 항목이 신규인 것이 정상. 리포트에 "베이스라인 스캔" 표시.
-- `new_count == 0`이면: 마지막 스캔 시각(`~/.wishket-radar/state.json`의 `last_scan`)과 함께 "신규 없음"만 응답하고 종료.
-- `total_matching_filter` 대비 조회 수가 현저히 적으면(30건 조회 제한) 리포트에 "상위 N페이지만 조회함" 명시.
+- If the user specified keywords, include `keyword`.
+- On initial run (`baseline: true`), all fetched projects are new; indicate "Baseline Scan" in the report.
+- If `new_count == 0`: return "No new projects" along with the last scan time (`last_scan` in `~/.wishket-radar/state.json`) and exit.
+- If `total_matching_filter` significantly exceeds retrieved items (30 items limit), note in the report: "Fetched top N pages only".
 
-## 2단계: 후보 선별
+## Step 2: Candidate Selection
 
-응답의 `new` 배열을 `match.score` 내림차순(이미 정렬됨) 기준으로:
+From the response `new` array, sorted by `match.score` descending:
 
-- **score >= 40** 또는 상위 5개 중 큰 쪽을 분석 대상으로.
-- score가 낮아도 제목에 명시적 키워드(예: rust, flutter, llm)가 있으면 포함.
-- 분석 대상은 최대 5개. 나머지는 리포트 말미에 표로 간단 나열.
+- Select candidates with **score >= 40** or the top 5, whichever is larger.
+- Include projects with explicit keywords in the title (e.g., Rust, Flutter, LLM) even if the score is lower.
+- Limit deep analysis to at most 5 items. List remaining items in a brief table at the end of the report.
 
-## 3단계: 상세 분석
+## Step 3: Detailed Analysis
 
-각 후보에 대해 `get_project(id)`로 상세(JSON-LD 전체 설명 포함)를 **순차** 조회한다. 서버가 요청 사이 robots Crawl-delay 5초를 지키므로 `get_project`를 병렬 호출하지 않는다. 상세를 모은 뒤 `wishket-analyst` 서브에이전트는 후보별로 동시에 디스패치해도 된다.
+For each candidate, fetch details (including full JSON-LD description) **sequentially** using `get_project(id)`. Do NOT call `get_project` in parallel to respect the 5-second `Crawl-delay` robots.txt policy. After collecting details, `wishket-analyst` subagents may be dispatched in parallel per candidate.
 
-- 서브에이전트 프롬프트: get_project 결과 JSON 전체 + 사용자 프로필 요약.
-- 프로필 요약: `~/.wishket-radar/profile.yaml` (`WISHKET_PROFILE`이 있으면 그 경로)을 Read로 읽는다. 파일이 없으면 스택을 지어내지 말고, 프로필 없음과 wishket-onboard 안내를 적고 analyst에는 "프로필 없음"만 넘긴다.
+- Subagent Prompt: Full JSON result of `get_project` + user profile summary.
+- User profile summary: Read `~/.wishket-radar/profile.yaml` (or `WISHKET_PROFILE`). If the file does not exist, do not fabricate a stack; pass "No profile configured" and suggest running `wishket-onboard`.
 
-## 4단계: 리포트
+## Step 4: Report Generation
 
-리포트 파일: `~/.wishket-radar/reports/YYYY-MM-DD-HHmm.md` (디렉터리 없으면 생성, 한국 시각 기준 파일명).
+Save the report to `~/.wishket-radar/reports/YYYY-MM-DD-HHmm.md` (create directory if missing, timestamp in KST).
 
-템플릿:
+Template format:
 
 ```markdown
 # 위시켓 스캔 리포트 — YYYY-MM-DD HH:mm
@@ -58,11 +58,11 @@ MCP 도구 `wishket` 서버의 `scan_new` 호출. 인자를 생략해도 서버�
 ### 1. [A] {제목}
 - URL: {url} · {budget} · {duration} · {role}/{level} · {location}
 - 키워드 매칭: {score}점 (matched: ..., missing: ...)
-- 적합도 판단: {analyst 서술}
-- 주의점: {analyst 서술}
-- 제안 방향: {analyst 서술 1-2줄}
+- 적합도 판단: {analyst output}
+- 주의점: {analyst output}
+- 제안 방향: {analyst output 1-2 lines}
 
-(후보마다 반복)
+(Repeat for each candidate)
 
 ## 그 외 신규 (미분석)
 
@@ -70,24 +70,24 @@ MCP 도구 `wishket` 서버의 `scan_new` 호출. 인자를 생략해도 서버�
 |---|---|---|---|---|---|---|
 ```
 
-적합도 등급은 analyst 판정(A/B/C) 사용. 등급 기준: A=핵심 스택 직접 매칭+조건 합리적, B=부분 매칭 또는 조건 불확실, C=스택 편차 큼.
+Fit grades use the analyst rating (A/B/C): A = direct core stack match + reasonable terms, B = partial match or uncertain terms, C = large stack mismatch.
 
-## 5단계: 채팅 요약
+## Step 5: Chat Summary
 
-리포트 전문 대신 요약 응답:
+Provide a concise summary instead of the entire report:
 
-- 신규 N건, A/B/C 등급 분포
-- A등급 프로젝트 제목+한줄 이유 (있으면)
-- 리포트 파일 경로
-- 마감 임박(마감 1주 이내) 항목 강조
+- Total new items count and A/B/C grade distribution.
+- Grade A project titles and one-line rationale (if any).
+- Path to the saved report file.
+- Highlight imminent deadlines (closing within 1 week).
 
-## 리포트와 인박스
+## Report and Inbox Integration
 
-리포트의 적합도 판정(A/B/C)·주의점·제안 방향은 대시보드가 `reports/*.md`를 파싱해 해당 공고의 인박스 카드에 자동으로 붙인다. 따라서 **"### N. [A] 제목" 헤딩과 그 아래 `- URL:` 줄 형식을 지켜야** 연결된다. 형식이 깨지면 분석 결과가 공고에 붙지 않는다.
+The web UI dashboard parses `reports/*.md` to attach fit grade (A/B/C), risks, and proposal advice directly to Inbox cards. Maintain the exact format `### N. [A] Title` heading and `- URL:` line for seamless parser linkage.
 
-## 유지
+## Maintenance
 
-- 스캔 기준 갱신: 사용자가 "매칭 기준 바꿔줘" 하면 wishket-profile로 `profile.yaml`을 편집한다.
-- 분석한 공고를 바로 추적하려면 wishket-pipeline으로 "관심" 등록(또는 대시보드 인박스에서 분류).
-- 캐시 리셋: `reset_cache` MCP 도구. 다음 스캔이 베이스라인이 됨.
-- 필터 확인: `list_filters` 도구. 검증된 키(c/ff/page/s) 외에는 raw로만 전달.
+- Updating scan criteria: If the user requests updating matching criteria, edit `profile.yaml` via `wishket-profile`.
+- Tracking analyzed projects: Register them to "Interested" via `wishket-pipeline` or triage them in the dashboard Inbox.
+- Cache reset: Use the `reset_cache` MCP tool (the next scan will become a baseline).
+- Check filters: Use the `list_filters` tool. Pass only validated keys (`c` / `ff` / `page` / `s`) as structured arguments; everything else as `raw`.
