@@ -1,9 +1,9 @@
 #!/bin/sh
 # wishket MCP server launcher.
-# Resolution order:
-#   1. local release binary (git checkout already built) — dev override, no version check
-#   2. installed wishket-mcp (~/.local/bin or PATH, not this wrapper),
-#      version-checked against the plugin manifest
+# Resolution order (all release-channel candidates are version-checked
+# against the plugin manifest; a stale local build must not win):
+#   1. local release binary (git checkout already built)
+#   2. installed wishket-mcp (~/.local/bin or PATH, not this wrapper)
 #   3. prebuilt installer (install.sh) — when missing or older than the manifest
 #   4. cargo build only in a git checkout, after the installer failed
 # cargo may live in ~/.cargo/bin (rustup) or ~/.local/share/mise/shims (mise).
@@ -86,10 +86,7 @@ run_if_fresh() {
   exec "$cand"
 }
 
-if [ -x "$BIN" ]; then
-  exec "$BIN"
-fi
-
+run_if_fresh "$BIN" || true
 run_if_fresh "$INSTALLED" || true
 found=$(command -v wishket-mcp 2>/dev/null || true)
 run_if_fresh "$found" || true
@@ -97,12 +94,14 @@ run_if_fresh "$found" || true
 if [ -f "$PLUGIN_ROOT/install.sh" ]; then
   echo "wishket-mcp: installing prebuilt binary..." >&2
   sh "$PLUGIN_ROOT/install.sh" >&2 || true
+  run_if_fresh "$BIN" || true
   run_if_fresh "$INSTALLED" || true
   found=$(command -v wishket-mcp 2>/dev/null || true)
   run_if_fresh "$found" || true
 fi
 
 # installer could not produce a fresh binary — run what we have rather than fail
+run_if_real "$BIN" || true
 run_if_real "$INSTALLED" || true
 found=$(command -v wishket-mcp 2>/dev/null || true)
 run_if_real "$found" || true
