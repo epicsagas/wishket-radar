@@ -13,6 +13,12 @@
 - **스킬** `wishket-profile` · `wishket-scan` · `wishket-search` · `wishket-scout`: 문장 요청 시 자동 실행 (슬래시 커맨드 불필요)
 - **서브에이전트** `wishket-analyst`: 프로젝트 단건 심층 분석 (적합도 A/B/C). scout가 호출한다
 
+## 대시보드
+
+<img width="100%" src="assets/dashboard.png" alt="wishket-radar 대시보드" />
+
+> "위시켓 웹 UI 띄워줘", "위시켓 대시보드", "위시켓 지원 현황 화면으로 보여줘" 등의 자연어로 에이전트 세션에서 띄울 수 있음
+
 ## 설치
 
 호스트에 플러그인을 설치한 뒤, 채팅에서 온보딩을 한 번 돌리면 MCP 바이너리 확인부터 매칭 프로필까지 끝난다. 프리빌트 바이너리는 온보딩이 못 찾거나 MCP만 따로 쓸 때의 선택 사항이다.
