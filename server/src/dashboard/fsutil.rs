@@ -15,21 +15,15 @@ pub struct FileEntry {
     pub project_id: Option<String>,
 }
 
-/// 파일명에서 위시켓 공고 ID(5~6자리 숫자)를 찾는다.
-/// "2026-09-02-158080-submit.md" → 158080, "158092-proposal.md" → 158092.
-/// 날짜(2026, 09, 02)는 자릿수로 걸러진다.
-pub fn project_id_from_name(name: &str) -> Option<String> {
-    name.split(|c: char| !c.is_ascii_digit())
-        .filter(|t| (5..=7).contains(&t.len()))
-        .map(String::from)
-        .next()
+/// 공고 ID로 쓸 수 있는 디렉터리 이름인지 (숫자 5~7자리).
+fn is_project_dir(name: &str) -> bool {
+    (5..=7).contains(&name.len()) && name.chars().all(|c| c.is_ascii_digit())
 }
 
 /// 파일명이 루트 밖으로 나가지 않는지 검증하고 최종 경로를 반환한다.
 /// 이름에 경로 구분자/상위 참조가 있으면 거부한다.
 pub fn resolve(root: &Path, name: &str) -> Result<PathBuf, String> {
     if name.is_empty()
-        || name.contains('/')
         || name.contains('\\')
         || name.contains("..")
         || name.contains(':')
@@ -37,14 +31,26 @@ pub fn resolve(root: &Path, name: &str) -> Result<PathBuf, String> {
     {
         return Err(format!("invalid file name: {name:?}"));
     }
-    let joined = root.join(name);
+    // "{공고ID}/{파일}" 한 단계만 허용한다. 그 외 슬래시는 거부.
+    let mut parts = name.split('/');
+    let joined = match (parts.next(), parts.next(), parts.next()) {
+        (Some(f), None, _) if !f.is_empty() => root.join(f),
+        (Some(d), Some(f), None) if is_project_dir(d) && !f.is_empty() => root.join(d).join(f),
+        _ => return Err(format!("invalid file name: {name:?}")),
+    };
+    // 심볼릭 링크로 루트 밖을 가리키지 않는지 확인한다.
+    // 부모는 루트이거나 루트 바로 아래 공고 디렉터리여야 한다.
     if let Some(parent) = joined.parent() {
-        // 심볼릭 링크 등으로 루트가 가리키는 실제 위치와 일치하는지 확인
         let real_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
         let real_parent = parent
             .canonicalize()
             .unwrap_or_else(|_| parent.to_path_buf());
-        if real_parent != real_root {
+        let ok = real_parent == real_root
+            || real_parent
+                .parent()
+                .map(|g| g == real_root)
+                .unwrap_or(false);
+        if !ok {
             return Err(format!("path escapes root: {name:?}"));
         }
     }
@@ -66,33 +72,71 @@ pub fn atomic_write(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
 }
 
 /// 디렉터리 파일 목록 (mtime 역순). 없으면 빈 벡터.
+///
+/// `{root}/{공고ID}/파일` 구조를 한 단계 훑는다. 소유자는 디렉터리가 정하며
+/// 파일명은 해석하지 않는다 — 파일명에서 ID를 추측하면 날짜(202609…) 같은
+/// 숫자에 걸려 오분류된다. 루트에 바로 있는 파일은 공고 미상("기타").
 pub fn list(root: &Path) -> Vec<FileEntry> {
     let Ok(entries) = std::fs::read_dir(root) else {
         return Vec::new();
     };
-    let mut out: Vec<FileEntry> = entries
-        .flatten()
-        .filter_map(|e| {
-            let name = e.file_name().to_string_lossy().into_owned();
-            if name.starts_with('.') || name.ends_with(".bak") || name.ends_with(".tmp-write") {
-                return None;
+    let mut out: Vec<FileEntry> = Vec::new();
+    for e in entries.flatten() {
+        let name = e.file_name().to_string_lossy().into_owned();
+        if name.starts_with('.') {
+            continue;
+        }
+        let Ok(meta) = e.metadata() else { continue };
+        if meta.is_dir() {
+            if !is_project_dir(&name) {
+                continue; // 공고 ID 형태가 아닌 디렉터리는 무시
             }
-            let meta = e.metadata().ok()?;
-            Some(FileEntry {
-                project_id: project_id_from_name(&name),
+            let Ok(inner) = std::fs::read_dir(e.path()) else {
+                continue;
+            };
+            for f in inner.flatten() {
+                let fname = f.file_name().to_string_lossy().into_owned();
+                if skip_file(&fname) {
+                    continue;
+                }
+                let Ok(fmeta) = f.metadata() else { continue };
+                if fmeta.is_dir() {
+                    continue;
+                }
+                out.push(FileEntry {
+                    // 경로는 "{id}/{파일}" — resolve가 이 형태를 허용한다
+                    name: format!("{name}/{fname}"),
+                    size: fmeta.len(),
+                    mtime_epoch: mtime(&fmeta),
+                    project_id: Some(name.clone()),
+                });
+            }
+        } else {
+            if skip_file(&name) {
+                continue;
+            }
+            out.push(FileEntry {
                 name,
                 size: meta.len(),
-                mtime_epoch: meta
-                    .modified()
-                    .ok()
-                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                    .map(|d| d.as_secs())
-                    .unwrap_or(0),
-            })
-        })
-        .collect();
+                mtime_epoch: mtime(&meta),
+                project_id: None,
+            });
+        }
+    }
     out.sort_by_key(|f| std::cmp::Reverse(f.mtime_epoch));
     out
+}
+
+fn skip_file(name: &str) -> bool {
+    name.starts_with('.') || name.ends_with(".bak") || name.ends_with(".tmp-write")
+}
+
+fn mtime(m: &std::fs::Metadata) -> u64 {
+    m.modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs())
+        .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -131,22 +175,47 @@ mod tests {
     }
 
     #[test]
-    fn project_id_extracted_from_filename() {
+    fn list_groups_by_directory_not_filename() {
+        // 소유자는 디렉터리가 정한다. 파일명에서 ID를 추측하면
+        // "2026-09-02-..."의 202609 같은 숫자에 걸려 오분류된다.
+        let root = tmpdir("group");
+        std::fs::create_dir_all(root.join("158080")).unwrap();
+        std::fs::write(root.join("158080").join("2026-09-02-form.txt"), b"x").unwrap();
+        std::fs::write(root.join("158080").join("submit.md"), b"x").unwrap();
+        std::fs::write(root.join("memo.md"), b"x").unwrap();
+        // 공고 ID 형태가 아닌 디렉터리는 무시
+        std::fs::create_dir_all(root.join("drafts")).unwrap();
+        std::fs::write(root.join("drafts").join("ignored.md"), b"x").unwrap();
+
+        let files = list(&root);
+        let owned: Vec<_> = files.iter().filter(|f| f.project_id.is_some()).collect();
+        assert_eq!(owned.len(), 2, "{files:?}");
+        assert!(owned
+            .iter()
+            .all(|f| f.project_id.as_deref() == Some("158080")));
+        assert!(owned.iter().any(|f| f.name == "158080/submit.md"));
+
+        let loose: Vec<_> = files.iter().filter(|f| f.project_id.is_none()).collect();
+        assert_eq!(loose.len(), 1, "루트 파일은 기타");
+        assert_eq!(loose[0].name, "memo.md");
+        let _ = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn resolve_allows_one_project_dir_level() {
+        let root = tmpdir("nested");
+        std::fs::create_dir_all(root.join("158080")).unwrap();
         assert_eq!(
-            project_id_from_name("2026-09-02-158080-submit.md").as_deref(),
-            Some("158080"),
-            "날짜는 자릿수로 걸러진다"
+            resolve(&root, "158080/a.md").unwrap(),
+            root.join("158080").join("a.md")
         );
-        assert_eq!(
-            project_id_from_name("158092-epiccounty-proposal.md").as_deref(),
-            Some("158092")
-        );
-        assert_eq!(project_id_from_name("portfolio-entries.md"), None);
-        assert_eq!(
-            project_id_from_name("2026-09-02-1117.md"),
-            None,
-            "리포트 파일명"
-        );
+        // 두 단계 이상, 비ID 디렉터리, 순회는 전부 거부
+        assert!(resolve(&root, "158080/sub/a.md").is_err());
+        assert!(resolve(&root, "drafts/a.md").is_err());
+        assert!(resolve(&root, "../state.json").is_err());
+        assert!(resolve(&root, "158080/../../x").is_err());
+        assert!(resolve(&root, "158080/").is_err());
+        let _ = std::fs::remove_dir_all(&root);
     }
 
     #[test]

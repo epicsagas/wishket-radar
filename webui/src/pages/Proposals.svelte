@@ -81,7 +81,7 @@
           <ul class="filelist">
             {#each g.items as f (f.name)}
               <li class:sel={selected === f.name}>
-                <button class="filebtn" onclick={() => (selected = f.name)}>{f.name}</button>
+                <button class="filebtn" onclick={() => (selected = f.name)}>{f.name.split('/').pop()}</button>
               </li>
             {/each}
           </ul>

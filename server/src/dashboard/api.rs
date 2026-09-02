@@ -676,8 +676,8 @@ pub fn router() -> Router<Arc<AppState>> {
             axum::routing::patch(patch_application),
         )
         .route("/files/{root}", get(list_files))
-        .route("/files/{root}/{name}", get(get_file).put(put_file))
-        .route("/raw/{root}/{name}", get(get_raw))
+        .route("/files/{root}/{*name}", get(get_file).put(put_file))
+        .route("/raw/{root}/{*name}", get(get_raw))
 }
 
 #[cfg(test)]

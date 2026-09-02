@@ -152,7 +152,7 @@ scripts/wishket-mcp dashboard --port 8790 --no-open
 ├── applications.yaml   # 지원 파이프라인 (wishket-pipeline/webui)
 ├── dashboard-token     # webui 접근 토큰 (자동 생성, 0600)
 ├── reports/            # 스캔 리포트 (한국어 markdown)
-├── proposals/          # 지원서·제안서 초안
+├── proposals/<공고ID>/ # 지원서·제안서 (공고별 디렉터리)
 ├── portfolios/         # 포트폴리오 폼 초안
 └── deadlines/          # 마감 .ics
 ```

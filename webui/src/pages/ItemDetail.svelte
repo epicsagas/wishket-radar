@@ -163,7 +163,7 @@
           {#each docs as f (f.name)}
             <li>
               <a href="#/proposals?file={encodeURIComponent(f.name)}">
-                <span class="mono">{f.name}</span>
+                <span class="mono">{f.name.split('/').pop()}</span>
               </a>
             </li>
           {/each}

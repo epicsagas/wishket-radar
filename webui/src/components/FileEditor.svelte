@@ -79,7 +79,7 @@
 {:else}
   <div class="filepane">
     <div class="bar">
-      <span class="mono dim">{data.name}</span>
+      <span class="mono dim">{data.name.split('/').pop()}</span>
       <div class="row">
         {#if saved}<span class="dim">저장됨</span>{/if}
         {#if editable}
