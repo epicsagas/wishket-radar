@@ -2,6 +2,7 @@
 //!
 //! Tools: search_projects, scan_new, get_project, list_filters, reset_cache.
 
+mod dashboard;
 mod profile;
 mod state;
 mod wishket;
@@ -196,11 +197,19 @@ impl Wishket {
                 false
             }
             None => {
+                // 인박스에 그대로 렌더할 수 있도록 카드 정보를 같이 저장한다
+                // (트리아지 화면이 매번 위시켓을 다시 긁지 않게).
                 st.seen.insert(
                     c.id.clone(),
                     state::SeenEntry {
                         first_seen: scan_at.clone(),
                         title: c.title.clone(),
+                        url: Some(c.url.clone()),
+                        budget: c.budget.clone(),
+                        duration: c.duration.clone(),
+                        deadline: c.deadline.clone(),
+                        skills: c.skills.clone(),
+                        ..Default::default()
                     },
                 );
                 true
@@ -229,6 +238,20 @@ impl Wishket {
                 .unwrap_or(0);
             sb.cmp(&sa)
         });
+
+        // 매칭 점수를 인박스 항목에 백필 (attach_match 이후에야 계산됨)
+        for c in &cards {
+            if let (Some(entry), Some(score)) = (
+                st.seen.get_mut(&c.id),
+                c.r#match
+                    .as_ref()
+                    .and_then(|m| m.get("score"))
+                    .and_then(Value::as_u64),
+            ) {
+                entry.score = Some(score as u32);
+            }
+        }
+        state::save(&st).map_err(|e| err(format!("state save: {e}")))?;
 
         Ok(json_result(json!({
             "new": cards,
@@ -327,7 +350,7 @@ struct DetailParams {
     id: String,
 }
 
-#[tool_handler(name = "wishket-mcp", version = "0.1.2")]
+#[tool_handler(name = "wishket-mcp", version = "0.2.0")]
 impl ServerHandler for Wishket {}
 
 fn cli_output(arg: Option<&str>) -> Option<String> {
@@ -336,7 +359,7 @@ fn cli_output(arg: Option<&str>) -> Option<String> {
             Some(format!("wishket-mcp {}", env!("CARGO_PKG_VERSION")))
         }
         Some("--help") | Some("-h") => Some(
-            "wishket-mcp: MCP server (stdio)\n  --version, -V  Print version\n  --help, -h     Print help"
+            "wishket-mcp: MCP server (stdio)\n  --version, -V  Print version\n  --help, -h     Print help\n  dashboard [--port N] [--no-open]  로컬 webui (0.0.0.0, 토큰 인증)"
                 .into(),
         ),
         _ => None,
@@ -345,9 +368,21 @@ fn cli_output(arg: Option<&str>) -> Option<String> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    if let Some(msg) = cli_output(std::env::args().nth(1).as_deref()) {
-        println!("{msg}");
-        return Ok(());
+    let mut args = std::env::args().skip(1);
+    match args.next().as_deref() {
+        Some("dashboard") => {
+            let cli = dashboard::Cli::parse_from(args).unwrap_or_else(|e| {
+                eprintln!("{e}");
+                std::process::exit(2);
+            });
+            return dashboard::run(cli).await;
+        }
+        arg => {
+            if let Some(msg) = cli_output(arg) {
+                println!("{msg}");
+                return Ok(());
+            }
+        }
     }
     let service = Wishket::new().serve(stdio()).await?;
     service.waiting().await?;

@@ -11,10 +11,63 @@ use serde::{Deserialize, Serialize};
 
 const PRUNE_DAYS: u64 = 90;
 
+/// 스캔으로 발견된 공고 한 건. 인박스(트리아지 대기열)의 항목이기도 하다.
+///
+/// 기존 필드(first_seen/title)만 있는 구 state.json도 그대로 읽힌다
+/// — 추가분은 전부 `#[serde(default)]`.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct SeenEntry {
     pub first_seen: String,
     pub title: String,
+    /// 트리아지 결과. None이면 아직 미분류(인박스에 남아 있음).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub triage: Option<Triage>,
+    /// 트리아지한 날짜 (YYYY-MM-DD)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub triaged_at: Option<String>,
+    /// 카드에서 딴 표시용 정보 — 인박스를 렌더할 때 재조회가 필요 없게 한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub score: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deadline: Option<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<String>,
+
+    // --- 상세 캐시 (인박스 "상세 불러오기"로 채워짐) -------------------
+    /// JSON-LD 전체 설명. 있으면 상세 화면이 재조회 없이 바로 렌더한다.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// 조건 행 (모집 마감일/예상 시작일/관련 기술 ...)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub conditions: Vec<(String, String)>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub level: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<String>,
+    /// 매칭된 프로필 기술 (상세 기준 재계산)
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub matched: Vec<String>,
+    /// 상세를 마지막으로 가져온 시각 (ISO). 재조회 판단용.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub detail_fetched_at: Option<String>,
+}
+
+/// 인박스 트리아지 결과.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Triage {
+    /// 관심 — 파이프라인으로 넘어간다
+    Interested,
+    /// 스킵 — 인박스에서 내리고 다시 안 띄운다
+    Skipped,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -168,6 +221,7 @@ mod tests {
             SeenEntry {
                 first_seen: recent.clone(),
                 title: "t".into(),
+                ..Default::default()
             },
         );
         st.seen.insert(
@@ -175,11 +229,45 @@ mod tests {
             SeenEntry {
                 first_seen: "2020-01-01T00:00:00+09:00".into(),
                 title: "old".into(),
+                ..Default::default()
             },
         );
         prune(&mut st);
         assert!(st.seen.contains_key("1"));
         assert!(!st.seen.contains_key("2"));
+    }
+
+    #[test]
+    fn legacy_state_json_without_new_fields_still_loads() {
+        // 0.1.x가 쓴 state.json에는 triage/url/score 등이 없다 — 그래도 읽혀야 한다.
+        let raw = r#"{"seen":{"1":{"first_seen":"2026-09-01T10:00:00+09:00","title":"구버전"}},"last_scan":null}"#;
+        let st: State = serde_json::from_str(raw).expect("legacy state parses");
+        let e = st.seen.get("1").expect("entry");
+        assert_eq!(e.title, "구버전");
+        assert!(e.triage.is_none(), "미분류 = 인박스에 남는다");
+        assert!(e.url.is_none());
+        assert!(e.skills.is_empty());
+    }
+
+    #[test]
+    fn triage_roundtrips_through_json() {
+        let mut st = State::default();
+        st.seen.insert(
+            "9".into(),
+            SeenEntry {
+                first_seen: now_iso(),
+                title: "관심 건".into(),
+                triage: Some(Triage::Interested),
+                triaged_at: Some("2026-09-02".into()),
+                score: Some(37),
+                ..Default::default()
+            },
+        );
+        let json = serde_json::to_string(&st).unwrap();
+        assert!(json.contains("\"interested\""), "{json}");
+        let back: State = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.seen["9"].triage, Some(Triage::Interested));
+        assert_eq!(back.seen["9"].score, Some(37));
     }
 
     #[test]

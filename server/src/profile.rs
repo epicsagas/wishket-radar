@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Skill {
     pub name: String,
     #[serde(default)]
@@ -23,18 +23,18 @@ fn default_weight() -> u32 {
     1
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[allow(dead_code)]
 pub struct Profile {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub headline: Option<String>,
     #[serde(default)]
     pub skills: Vec<Skill>,
     #[serde(default)]
     pub roles: Vec<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub notes: Option<String>,
 }
 
@@ -218,6 +218,44 @@ mod tests {
         assert_eq!(score(&p, "golang api").score, 100);
         assert_eq!(score(&p, "ongoing 리팩터").score, 0);
         assert_eq!(score(&p, "cargo-go-cli").score, 100);
+    }
+
+    #[test]
+    fn structured_roundtrip_preserves_fields() {
+        // 폼 편집은 yaml을 파싱→직렬화한다. 필드가 유실되면 프로필이 망가진다.
+        let src = "\
+name: tester
+headline: 백엔드 개발자
+skills:
+  - name: Rust
+    keywords: [rust, 러스트]
+    weight: 3
+  - name: Go
+    keywords: [go]
+    weight: 1
+roles:
+  - 백엔드 개발자
+notes: |
+  원격 선호
+";
+        let p: Profile = serde_yaml::from_str(src).unwrap();
+        let out = serde_yaml::to_string(&p).unwrap();
+        let back: Profile = serde_yaml::from_str(&out).unwrap();
+        assert_eq!(back.name.as_deref(), Some("tester"));
+        assert_eq!(back.headline.as_deref(), Some("백엔드 개발자"));
+        assert_eq!(back.skills.len(), 2);
+        assert_eq!(back.skills[0].name, "Rust");
+        assert_eq!(back.skills[0].keywords, vec!["rust", "러스트"]);
+        assert_eq!(back.skills[0].weight, 3);
+        assert_eq!(back.skills[1].weight, 1, "기본 weight도 보존");
+        assert_eq!(back.roles, vec!["백엔드 개발자"]);
+        assert!(back.notes.as_deref().unwrap().contains("원격 선호"));
+        assert!(
+            score_card(&back, "rust 프로젝트")["score"]
+                .as_u64()
+                .unwrap()
+                > 0
+        );
     }
 
     #[test]

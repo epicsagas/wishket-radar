@@ -17,7 +17,7 @@ use tokio::time::sleep;
 pub const BASE: &str = "https://www.wishket.com";
 /// 정체성을 밝히는 봇 UA. 위시켓은 UA 기반 차단을 하지 않고(nginx, 200 OK 확인) —
 /// 브라우저 위장보다 연락처가 드러나는 쪽이 방어 가능하다.
-pub const UA: &str = "wishket-radar/0.1.2 (+https://github.com/epicsagas/wishket-radar)";
+pub const UA: &str = "wishket-radar/0.2.0 (+https://github.com/epicsagas/wishket-radar)";
 
 /// Inter-request delay. robots.txt Crawl-delay: 5 준수.
 pub const REQUEST_DELAY_MS: u64 = 5000;
@@ -348,6 +348,32 @@ fn find_job_posting(doc: &Html) -> Option<JobPosting> {
 
 /// Parse detail page. Combines JSON-LD JobPosting (title/description/dates)
 /// with the condition rows and skill tags from the HTML body.
+/// JobPosting JSON-LD가 없는 페이지(마감 등)에서 제목을 건진다.
+/// h1 → og:title → <title>("제목 · 위시켓(Wishket) - 프로젝트") 순.
+fn fallback_title(doc: &Html) -> Option<String> {
+    let clean = |t: String| -> Option<String> {
+        let t = t.split('·').next().unwrap_or(&t).trim().to_string();
+        (!t.is_empty()).then_some(t)
+    };
+    for s in ["h1.project-detail-title", "h1"] {
+        if let Some(t) = doc.select(&sel(s)).next().map(text_of).and_then(&clean) {
+            return Some(t);
+        }
+    }
+    if let Some(c) = doc
+        .select(&sel(r#"meta[property="og:title"]"#))
+        .next()
+        .and_then(|e| e.value().attr("content").map(str::to_string))
+        .and_then(clean)
+    {
+        return Some(c);
+    }
+    doc.select(&sel("title"))
+        .next()
+        .map(text_of)
+        .and_then(clean)
+}
+
 pub fn parse_detail(id: &str, html: &str) -> ProjectDetail {
     let doc = Html::parse_document(html);
     let jp = find_job_posting(&doc);
@@ -376,9 +402,21 @@ pub fn parse_detail(id: &str, html: &str) -> ProjectDetail {
             title: jp
                 .as_ref()
                 .and_then(|j| j.title.clone())
+                .or_else(|| fallback_title(&doc))
                 .unwrap_or_default(),
             ..Default::default()
         });
+
+    // 카드 DOM에서 왔더라도 제목이 비면 문서에서 건진다 (마감 공고 등)
+    if card.title.trim().is_empty() {
+        if let Some(t) = jp
+            .as_ref()
+            .and_then(|j| j.title.clone())
+            .or_else(|| fallback_title(&doc))
+        {
+            card.title = t;
+        }
+    }
     // 상세 설명까지 매칭 텍스트로 쓸 수 있게 skills 보강
     for tag in doc.select(&skill_tag) {
         let t = text_of(tag);
@@ -663,6 +701,27 @@ mod tests {
         assert_eq!(cards[0].private_matching, Some(true));
         // 툴팁 텍스트가 title 등 다른 필드로 새지 않는지
         assert_eq!(cards[0].status.as_deref(), Some("모집 중"));
+    }
+
+    #[test]
+    fn detail_without_job_posting_still_gets_title() {
+        // 마감된 공고는 JobPosting JSON-LD를 안 내려준다 — 제목이 비면 안 된다.
+        let html = r#"<html><head>
+            <title>AI 기반 문서 영상 자동생성 개발 · 위시켓(Wishket) - 프로젝트</title>
+            <script type="application/ld+json">{"@type":"BreadcrumbList"}</script>
+            </head><body>
+            <div class="project-detail-condition-row"><div>모집 마감일</div><div>2026년 09월 02일</div></div>
+            </body></html>"#;
+        let d = parse_detail("158089", html);
+        assert_eq!(d.card.title, "AI 기반 문서 영상 자동생성 개발");
+        assert_eq!(d.conditions.len(), 1);
+    }
+
+    #[test]
+    fn detail_prefers_h1_over_page_title() {
+        let html = r#"<html><head><title>무시됨 · 위시켓(Wishket) - 프로젝트</title></head>
+            <body><h1>진짜 제목</h1></body></html>"#;
+        assert_eq!(parse_detail("1", html).card.title, "진짜 제목");
     }
 
     #[test]
