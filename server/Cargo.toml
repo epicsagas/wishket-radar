@@ -13,7 +13,7 @@ rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 webbrowser = "0.8"
 rand = "0.9"
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
-reqwest = { version = "0.13", default-features = false, features = ["rustls-tls", "json"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "query"] }
 scraper = "0.27"
 lz-str = "0.2"
 serde = { version = "1", features = ["derive"] }
