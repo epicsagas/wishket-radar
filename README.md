@@ -10,8 +10,8 @@
 
 - **Rust MCP 서버** (`wishket`): 위시켓 비공식 검색 API(리버스 엔지니어링) 호출, HTML/JSON-LD 파싱, 신규 diff 캐시, 결정론적 키워드 점수 계산
 - **온보딩** `wishket-onboard`: 플러그인 설치 후 바이너리 점검부터 매칭 프로필까지 한 번에 설정
-- **스킬** `wishket-profile` · `wishket-scan` · `wishket-search` · `wishket-scout`: 문장 요청 시 자동 실행 (슬래시 커맨드 불필요)
-- **서브에이전트** `wishket-analyst`: 프로젝트 단건 심층 분석 (적합도 A/B/C). scout가 호출한다
+- **스킬**: 조회(`scan` · `search` · `scout` · `profile`)와 지원 흐름(`dashboard` · `apply` · `quote` · `pipeline` · `portfolio` · `deadline` · `feedback`). 문장 요청 시 자동 실행 (슬래시 커맨드 불필요)
+- **서브에이전트** `wishket-analyst`: 프로젝트 단건 심층 분석 (적합도 A/B/C). scout가 호출한다. 출력은 한국어 5줄
 
 ## 대시보드
 
@@ -94,7 +94,7 @@ irm https://github.com/epicsagas/wishket-radar/releases/latest/download/install.
 
 ## 사용
 
-별도 슬래시 명령 없이 문장으로 요청하면 된다. 권장 순서는 온보딩 → 프로필 확인 → 일상 조회다.
+별도 슬래시 명령 없이 문장으로 요청하면 된다. 권장 순서는 온보딩 → 프로필 확인 → 스캔 → 대시보드 인박스 분류 → 지원이다.
 
 | 순서 | 스킬 | 트리거 예시 | 동작 |
 |---|---|---|---|
@@ -103,8 +103,8 @@ irm https://github.com/epicsagas/wishket-radar/releases/latest/download/install.
 | 3 | `wishket-scan` | "위시켓 스캔", "새 프로젝트 있어?" | 마지막 스캔 이후 신규만 diff |
 | 4 | `wishket-search` | "위시켓 검색", "flutter 프로젝트 있어?", "외주 찾아줘" | 임시 검색 (캐시 기록 없음) |
 | 5 | `wishket-scout` | "위시켓 분석", "스카우트", "리포트 뽑아줘" | 신규 스캔 + 상위 후보 심층 분석 + 리포트 |
-| 6 | `wishket-portfolio` | "이 프로젝트로 포트폴리오 써줘" | 위시켓 포트폴리오 폼 초안 (일반 텍스트) |
-| 7 | `wishket-apply` | "이 공고 지원서 써줘" | 제안서 작성 + 첨부 포트폴리오 추천. 견적은 `wishket-quote` |
+| 6 | `wishket-portfolio` | "이 프로젝트로 포트폴리오 써줘" | 위시켓 포트폴리오 폼 초안 (플레인 텍스트, 마크다운 금지) |
+| 7 | `wishket-apply` | "이 공고 지원서 써줘" | 초안 `draft.md` + 위시켓 붙여넣기 `form.txt`. 견적은 `wishket-quote` |
 | 8 | `wishket-pipeline` | "지원했어", "미팅 잡혔어", "지원 현황" | 위시켓 10단계 추적, 단계별 전환율·수주율 |
 | 9 | `wishket-deadline` | "마감 캘린더에 넣어줘" | .ics 생성 → macOS/구글 캘린더 등록 |
 | 10 | `wishket-feedback` | "수주율 높여줘" | 지원 결과 데이터로 프로필 가중치 보정 제안 |
@@ -121,7 +121,7 @@ cp profile.example.yaml ~/.wishket-radar/profile.yaml
 
 ## 대시보드 (webui)
 
-같은 바이너리의 `dashboard` 서브커맨드가 `~/.wishket-radar/` 상태 전체를 브라우저에서 보여준다. 채팅 스킬과 같은 파일을 공유하므로 어느 쪽에서 편집해도 즉시 반영된다.
+같은 바이너리의 `dashboard` 서브커맨드가 `~/.wishket-radar/` 상태 전체를 브라우저에서 보여준다. 채팅 스킬과 같은 파일을 공유하므로 어느 쪽에서 편집해도 즉시 반영된다. 기본 진입 화면은 인박스다.
 
 ```bash
 scripts/wishket-mcp dashboard          # 기본 8787 포트, 브라우저 자동 오픈
@@ -129,8 +129,12 @@ scripts/wishket-mcp dashboard --port 8790 --no-open
 ```
 
 - 첫 기동 시 랜덤 토큰을 `~/.wishket-radar/dashboard-token`(0600)에 생성하고 접속 URL을 출력한다. 폰 등 LAN 기기 접속을 위해 0.0.0.0에 바인드되며, 모든 요청은 토큰 인증을 통과한다.
-- 기능: 인박스 트리아지(관심/스킵), 지원 퍼널·단계별 전환율·마감 D-day(대시보드), 단계 드롭다운 편집과 공고별 상세(파이프라인), profile.yaml·제안서·포트폴리오 직접 편집, 리포트 조회.
-- 스카우트 리포트의 적합도 판정(A/B/C)·주의점·제안 방향이 인박스 카드에 자동으로 붙어 트리아지 판단 근거가 된다.
+- 인박스에서 관심/스킵으로 분류한다. 관심만 파이프라인으로 간다. 공고 상세는 자동 조회하지 않는다(robots Crawl-delay). "상세 불러오기"를 누를 때만 위시켓에서 본문을 가져온다.
+- 파이프라인은 위시켓 10단계(관심·지원·상담·미팅·체결·진행 중·완료·미체결·탈락·철회)와 전환율·수주율을 보여 준다. 상세 `#/pipeline/{id}`에서 단계·메모·다음 할 일을 편집한다.
+- 내 정보: 매칭 프로필(구조화 폼 + YAML)과 포트폴리오. 포트폴리오는 공고와 무관한 재사용 자산이라 제안서와 분리한다.
+- 제안서는 `proposals/<공고ID>/` 아래 공고 단위. 로컬 검토용 `draft.md`(마크다운)와 위시켓 폼 붙여넣기용 `form.txt`(플레인 텍스트, `#`/`**`/표 금지) 두 파일만 쓴다.
+- 라이트/다크 테마는 사이드바 하단, 버전과 같은 줄 맨 오른쪽 아이콘으로 전환한다. 선택은 브라우저에 남는다.
+- 스카우트 리포트의 적합도 판정(A/B/C)·주의점·제안 방향이 인박스 카드에 붙는다.
 - 편집 저장은 원자 쓰기(tmp+rename) 후 이전 본문을 `.bak`으로 1세대 보관한다. profile.yaml은 저장 시 스키마 검증을 거친다.
 
 ## MCP 도구
@@ -158,8 +162,8 @@ scripts/wishket-mcp dashboard --port 8790 --no-open
 ├── applications.yaml   # 지원 파이프라인 (wishket-pipeline/webui)
 ├── dashboard-token     # webui 접근 토큰 (자동 생성, 0600)
 ├── reports/            # 스캔 리포트 (한국어 markdown)
-├── proposals/<공고ID>/ # 지원서·제안서 (공고별 디렉터리)
-├── portfolios/         # 포트폴리오 폼 초안
+├── proposals/<공고ID>/ # draft.md(검토) + form.txt(위시켓 붙여넣기)
+├── portfolios/         # 포트폴리오 폼 초안 (플레인 텍스트)
 └── deadlines/          # 마감 .ics
 ```
 
@@ -167,7 +171,17 @@ scripts/wishket-mcp dashboard --port 8790 --no-open
 
 ```bash
 cargo test --manifest-path server/Cargo.toml    # LZString 왕복·파서 단위 테스트
+npm --prefix webui ci && npm --prefix webui run build && npm --prefix webui run check
 ```
+
+프론트만 고칠 때는 API 서버와 Vite를 같이 켠다. Vite는 `/api`를 `127.0.0.1:8787`로 프록시한다.
+
+```bash
+scripts/wishket-mcp dashboard --no-open
+npm --prefix webui run dev    # http://localhost:5173
+```
+
+`wishket-mcp dashboard`는 `webui/dist`를 바이너리에 임베드한다. 릴리스·로컬 임베드 빌드 전에 `npm --prefix webui run build`가 필요하다. dist가 없으면 `server/build.rs`가 스텁 `index.html`을 써서 컴파일만 통과시킨다.
 
 위시켓 마크업이 바뀌면 `server/src/wishket.rs`의 셀렉터와 테스트 픽스처를 함께 갱신한다.
 
