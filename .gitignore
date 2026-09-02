@@ -515,5 +515,9 @@ profile.yaml
 profile.md
 !/profile.example.yaml
 
-# webui (Svelte) — dist는 플레이스홀더 index.html만 커밋
-!webui/dist/index.html
+# webui (Svelte)
+# Python template `lib/` matches any directory named lib. src/lib is source.
+!webui/src/lib/
+!webui/src/lib/**
+# dist/ is vite output. rust-embed writes a stub via server/build.rs when missing.
+
