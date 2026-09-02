@@ -39,4 +39,6 @@ description: 위시켓 플러그인 온보딩 (바이너리 설치 확인 + 프�
    - **심층 분석/리포트**: wishket-scout. 예: *"위시켓 분석해줘"*, *"스카우트 리포트"*
    - **조건별 실시간 검색**: wishket-search. 예: *"flutter 외주 찾아줘"*, *"파이썬 백엔드 검색해줘"*
    - **프로필/가중치 조정**: wishket-profile. 예: *"Rust 가중치 올려줘"*, *"FastAPI 키워드 추가"*
+   - **포트폴리오 작성**: wishket-portfolio. 예: *"이 프로젝트로 포트폴리오 써줘"*
+   - **지원서·제안서**: wishket-apply. 예: *"이 공고 지원서 써줘"*. 견적은 wishket-quote, 지원 추적은 wishket-pipeline, 마감 알림은 wishket-deadline.
    - 호스트가 스케줄 기능을 제공하면 매일 아침 스캔 루틴 등록을 안내한다.

@@ -45,3 +45,24 @@ jobs:
 
       - name: Run Tests
         run: cargo test --manifest-path server/Cargo.toml
+
+  webui:
+    name: Web UI Build & Check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+
+      - name: Install deps
+        run: npm --prefix webui ci
+
+      - name: Build
+        run: npm --prefix webui run build
+
+      - name: Type check
+        run: npm --prefix webui run check

@@ -60,11 +60,39 @@ jobs:
           name: artifacts-plan-dist-manifest
           path: plan-dist-manifest.json
 
+  # Build the Svelte webui once; cargo-dist matrix jobs embed the result
+  # via rust-embed without needing node on every target runner.
+  build-webui:
+    name: build-webui (svelte)
+    needs:
+      - plan
+    if: ${{ fromJson(needs.plan.outputs.val).ci.github.artifacts_matrix.include != null && (needs.plan.outputs.publishing == 'true' || fromJson(needs.plan.outputs.val).ci.github.pr_run_mode == 'upload') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: webui/package-lock.json
+      - name: Build webui
+        run: |
+          npm --prefix webui ci
+          npm --prefix webui run build
+      - uses: actions/upload-artifact@v7
+        with:
+          name: webui-dist
+          path: webui/dist/
+
   # Build and packages all the platform-specific things
   build-local-artifacts:
     name: build-local-artifacts (${{ join(matrix.targets, ', ') }})
     needs:
       - plan
+      - build-webui
     if: ${{ fromJson(needs.plan.outputs.val).ci.github.artifacts_matrix.include != null && (needs.plan.outputs.publishing == 'true' || fromJson(needs.plan.outputs.val).ci.github.pr_run_mode == 'upload') }}
     strategy:
       fail-fast: false
@@ -100,6 +128,11 @@ jobs:
       - name: Install dependencies
         run: |
           ${{ matrix.packages_install }}
+      - name: Fetch webui dist
+        uses: actions/download-artifact@v8
+        with:
+          name: webui-dist
+          path: webui/dist
       - name: Build artifacts
         run: |
           # Actually do builds and make zips and whatnot

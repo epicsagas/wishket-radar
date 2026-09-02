@@ -97,6 +97,12 @@ irm https://github.com/epicsagas/wishket-radar/releases/latest/download/install.
 | 3 | `wishket-scan` | "위시켓 스캔", "새 프로젝트 있어?" | 마지막 스캔 이후 신규만 diff |
 | 4 | `wishket-search` | "위시켓 검색", "flutter 프로젝트 있어?", "외주 찾아줘" | 임시 검색 (캐시 기록 없음) |
 | 5 | `wishket-scout` | "위시켓 분석", "스카우트", "리포트 뽑아줘" | 신규 스캔 + 상위 후보 심층 분석 + 리포트 |
+| 6 | `wishket-portfolio` | "이 프로젝트로 포트폴리오 써줘" | 위시켓 포트폴리오 폼 초안 (일반 텍스트) |
+| 7 | `wishket-apply` | "이 공고 지원서 써줘" | 제안서 작성 + 첨부 포트폴리오 추천. 견적은 `wishket-quote` |
+| 8 | `wishket-pipeline` | "지원했어", "지원 현황" | applications.yaml 지원 추적, 수주율 퍼널 |
+| 9 | `wishket-deadline` | "마감 캘린더에 넣어줘" | .ics 생성 → macOS/구글 캘린더 등록 |
+| 10 | `wishket-feedback` | "수주율 높여줘" | 지원 결과 데이터로 프로필 가중치 보정 제안 |
+| 11 | `wishket-dashboard` | "대시보드", "웹 UI 켜줘" | 로컬 webui 실행 (아래 참고) |
 
 온보딩을 건너뛰고 프로필만 손으로 만들 때는 예시를 복사한다.
 
@@ -106,6 +112,20 @@ cp profile.example.yaml ~/.wishket-radar/profile.yaml
 ```
 
 리포트는 `~/.wishket-radar/reports/`, seen 캐시는 `~/.wishket-radar/state.json`이다.
+
+## 대시보드 (webui)
+
+같은 바이너리의 `dashboard` 서브커맨드가 `~/.wishket-radar/` 상태 전체를 브라우저에서 보여준다. 채팅 스킬과 같은 파일을 공유하므로 어느 쪽에서 편집해도 즉시 반영된다.
+
+```bash
+scripts/wishket-mcp dashboard          # 기본 8787 포트, 브라우저 자동 오픈
+scripts/wishket-mcp dashboard --port 8790 --no-open
+```
+
+- 첫 기동 시 랜덤 토큰을 `~/.wishket-radar/dashboard-token`(0600)에 생성하고 접속 URL을 출력한다. 폰 등 LAN 기기 접속을 위해 0.0.0.0에 바인드되며, 모든 요청은 토큰 인증을 통과한다.
+- 기능: 인박스 트리아지(관심/스킵), 지원 퍼널·단계별 전환율·마감 D-day(대시보드), 단계 드롭다운 편집과 공고별 상세(파이프라인), profile.yaml·제안서·포트폴리오 직접 편집, 리포트 조회.
+- 스카우트 리포트의 적합도 판정(A/B/C)·주의점·제안 방향이 인박스 카드에 자동으로 붙어 트리아지 판단 근거가 된다.
+- 편집 저장은 원자 쓰기(tmp+rename) 후 이전 본문을 `.bak`으로 1세대 보관한다. profile.yaml은 저장 시 스키마 검증을 거친다.
 
 ## MCP 도구
 
@@ -127,9 +147,14 @@ cp profile.example.yaml ~/.wishket-radar/profile.yaml
 
 ```
 ~/.wishket-radar/
-├── profile.yaml  # 매칭 프로필 (기술 스택, 가중치, 역할 등)
-├── state.json    # seen 프로젝트 ID (90일 후 자동 정리)
-└── reports/      # 스캔 리포트 (한국어 markdown)
+├── profile.yaml        # 매칭 프로필 (기술 스택, 가중치, 역할 등)
+├── state.json          # seen 프로젝트 + 인박스 트리아지 + 상세 캐시 (90일 후 정리)
+├── applications.yaml   # 지원 파이프라인 (wishket-pipeline/webui)
+├── dashboard-token     # webui 접근 토큰 (자동 생성, 0600)
+├── reports/            # 스캔 리포트 (한국어 markdown)
+├── proposals/          # 지원서·제안서 초안
+├── portfolios/         # 포트폴리오 폼 초안
+└── deadlines/          # 마감 .ics
 ```
 
 ## 개발
