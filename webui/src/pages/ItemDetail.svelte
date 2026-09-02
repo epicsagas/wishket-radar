@@ -31,20 +31,14 @@
   const cached = $derived($appState?.details?.[id] ?? null)
 
   // 이 공고에 딸린 제안서·포트폴리오 (파일명에 공고 ID가 들어간 것)
-  let docs = $state<{ root: string; f: FileEntry }[]>([])
+  // 이 공고에 딸린 제안서. 포트폴리오는 공고 종속이 아니라 내 정보에 있다.
+  let docs = $state<FileEntry[]>([])
   $effect(() => {
     const cur = id
     docs = []
-    for (const root of ['proposals', 'portfolios']) {
-      api<{ files: FileEntry[] }>(`/api/files/${root}`)
-        .then((r) => {
-          const hit = r.files
-            .filter((f) => f.project_id === cur)
-            .map((f) => ({ root, f }))
-          if (hit.length) docs = [...docs, ...hit]
-        })
-        .catch(() => { /* 목록 실패는 조용히 무시 — 본문 표시가 우선 */ })
-    }
+    api<{ files: FileEntry[] }>('/api/files/proposals')
+      .then((r) => (docs = r.files.filter((f) => f.project_id === cur)))
+      .catch(() => { /* 목록 실패는 조용히 무시 — 본문 표시가 우선 */ })
   })
   const d = $derived(
     item?.deadline && $appState ? dday($appState.today, item.deadline) : null,
@@ -161,16 +155,15 @@
       />
 
       <h2 style="margin-top: 1.4rem">
-        관련 문서
+        제안서
         <span class="dim srcnote">{docs.length}건</span>
       </h2>
       {#if docs.length}
         <ul class="docs">
-          {#each docs as d (d.root + d.f.name)}
+          {#each docs as f (f.name)}
             <li>
-              <a href="#/proposals?file={encodeURIComponent(d.f.name)}&root={d.root}">
-                <span class="badge muted">{d.root === 'proposals' ? '제안서' : '포트폴리오'}</span>
-                <span class="mono">{d.f.name}</span>
+              <a href="#/proposals?file={encodeURIComponent(f.name)}">
+                <span class="mono">{f.name}</span>
               </a>
             </li>
           {/each}

@@ -1,6 +1,7 @@
 <script lang="ts">
   import { api } from '../api'
-  import { appState, refresh } from '../store'
+  import { appState, refresh, type FileEntry } from '../store'
+  import FileEditor from '../components/FileEditor.svelte'
 
   interface Skill { name: string; keywords: string[]; weight: number }
   interface ProfileData {
@@ -14,7 +15,20 @@
   let profile = $state<ProfileData | null>(null)
   let raw = $state<string | null>(null)
   let hasComments = $state(false)
+  let tab = $state<'profile' | 'portfolio'>('profile')
   let mode = $state<'form' | 'yaml'>('form')
+
+  // 포트폴리오 — 프로필과 같은 층위의 "나를 설명하는 자산"
+  let folio = $state<FileEntry[]>([])
+  let folioSel = $state('')
+  let folioLoading = $state(true)
+  api<{ files: FileEntry[] }>('/api/files/portfolios')
+    .then((r) => {
+      folio = r.files
+      if (r.files.length) folioSel = r.files[0].name
+    })
+    .catch(() => { /* 없으면 빈 목록 */ })
+    .finally(() => (folioLoading = false))
   let yamlText = $state('')
   let editingYaml = $state(false)
   let error = $state('')
@@ -120,10 +134,44 @@
 </script>
 
 <div class="page-head">
-  <h1>프로필</h1>
-  <span class="sub">profile.yaml · 저장 즉시 다음 스캔부터 반영</span>
+  <h1>내 정보</h1>
+  <span class="sub">
+    {tab === 'profile'
+      ? 'profile.yaml · 저장 즉시 다음 스캔부터 반영'
+      : `포트폴리오 ${folio.length}건 · 제안서 첨부에 재사용`}
+  </span>
 </div>
 
+<div class="toolbar">
+  <button class:ghost={tab !== 'profile'} onclick={() => (tab = 'profile')}>매칭 프로필</button>
+  <button class:ghost={tab !== 'portfolio'} onclick={() => (tab = 'portfolio')}>포트폴리오</button>
+</div>
+
+{#if tab === 'portfolio'}
+  {#if folioLoading}
+    <div class="panel"><div class="empty">불러오는 중…</div></div>
+  {:else if folio.length === 0}
+    <div class="panel">
+      <div class="empty">
+        <strong>포트폴리오가 없습니다</strong>
+        채팅에서 "이 프로젝트로 포트폴리오 써줘"라고 하면 위시켓 등록 폼 양식으로 만들어 드립니다.
+      </div>
+    </div>
+  {:else}
+    <div class="split">
+      <div class="panel list">
+        <ul class="filelist">
+          {#each folio as f (f.name)}
+            <li class:sel={folioSel === f.name}>
+              <button class="filebtn" onclick={() => (folioSel = f.name)}>{f.name}</button>
+            </li>
+          {/each}
+        </ul>
+      </div>
+      <div><FileEditor root="portfolios" name={folioSel} /></div>
+    </div>
+  {/if}
+{:else}
 {#if $appState?.profile_external}
   <div class="banner info">
     매칭(scout/scan)은 다른 경로의 프로필을 사용 중: <span class="mono">{$appState.profile_external}</span>
@@ -248,8 +296,10 @@
     </div>
   {/if}
 {/if}
+{/if}
 
 <style>
+  .list { max-height: calc(100vh - 13rem); overflow: auto; }
   .sec { padding: 1rem 1.15rem 1.15rem; margin-bottom: 0.9rem; }
   .sec h2 { display: flex; align-items: baseline; gap: 0.5rem; }
   .sec h2 .dim { text-transform: none; letter-spacing: 0; font-size: 0.72rem; font-weight: 400; }

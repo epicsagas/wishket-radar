@@ -3,16 +3,9 @@
   import { appState, type FileEntry } from '../store'
   import FileEditor from '../components/FileEditor.svelte'
 
-  const ROOTS = [
-    { key: 'proposals', label: '제안서' },
-    { key: 'portfolios', label: '포트폴리오' },
-  ] as const
-
   // 상세에서 "관련 문서"를 눌러 들어오면 해당 파일을 바로 연다
   const entry = new URLSearchParams(location.hash.split('?')[1] ?? '')
-  let root = $state<'proposals' | 'portfolios'>(
-    entry.get('root') === 'portfolios' ? 'portfolios' : 'proposals',
-  )
+  const root = 'proposals'
   let wanted = entry.get('file') ?? ''
   let files = $state<FileEntry[]>([])
   let selected = $state('')
@@ -39,13 +32,11 @@
   })
 
   $effect(() => {
-    const r = root
-    // 탭을 바꾸면 선택을 반드시 비운다 — 안 그러면 이전 탭 파일을 조회해 404가 난다
     selected = ''
     files = []
     error = ''
     loading = true
-    api<{ files: FileEntry[] }>(`/api/files/${r}`)
+    api<{ files: FileEntry[] }>(`/api/files/${root}`)
       .then((res) => {
         files = res.files
         const pick = wanted && res.files.some((f) => f.name === wanted) ? wanted : res.files[0]?.name
@@ -58,7 +49,7 @@
 </script>
 
 <div class="page-head">
-  <h1>{ROOTS.find((r) => r.key === root)?.label}</h1>
+  <h1>제안서</h1>
   <span class="sub">
     {files.length}건{groups.filter((g) => g.id).length ? ` · 공고 ${groups.filter((g) => g.id).length}건` : ''} · 편집 시 이전 본문은 .bak 보관
   </span>
@@ -66,22 +57,14 @@
 
 {#if error}<div class="banner err">{error}</div>{/if}
 
-<div class="toolbar">
-  {#each ROOTS as r}
-    <button class:ghost={root !== r.key} onclick={() => (root = r.key)}>{r.label}</button>
-  {/each}
-</div>
-
 <div class="split">
   <div class="panel list">
     {#if loading}
       <div class="empty">불러오는 중…</div>
     {:else if files.length === 0}
       <div class="empty">
-        <strong>{root === 'proposals' ? '제안서가 없습니다' : '포트폴리오가 없습니다'}</strong>
-        {root === 'proposals'
-          ? '채팅에서 "이 공고 지원서 써줘"로 만들면 여기에 쌓입니다.'
-          : '채팅에서 "포트폴리오 써줘"로 만들면 여기에 쌓입니다.'}
+        <strong>제안서가 없습니다</strong>
+        채팅에서 "이 공고 지원서 써줘"로 만들면 여기에 쌓입니다.
       </div>
     {:else}
       {#each groups as g (g.id || '__misc')}
@@ -108,7 +91,7 @@
   </div>
   <div>
     {#if selected}
-      <FileEditor {root} name={selected} />
+      <FileEditor root="proposals" name={selected} />
     {:else if !loading && files.length > 0}
       <div class="panel"><div class="empty">파일을 선택하세요.</div></div>
     {/if}
