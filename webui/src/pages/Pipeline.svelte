@@ -63,7 +63,8 @@
   </div>
 {:else if view === 'table'}
   <div class="panel">
-    <table>
+    <div class="tscroll">
+      <table>
       <thead>
         <tr>
           <th style="min-width: 22rem">공고</th>
@@ -124,7 +125,8 @@
           </tr>
         {/each}
       </tbody>
-    </table>
+      </table>
+    </div>
   </div>
 {:else}
   <div class="kanban active">
@@ -171,6 +173,8 @@
 {/if}
 
 <style>
+  /* 모바일: 6열 표를 가로 스크롤로. 데스크탑은 여유 있어 스크롤 없음 */
+  .tscroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .notebtn {
     padding: 0 0.4rem;
     font-size: 0.68rem;

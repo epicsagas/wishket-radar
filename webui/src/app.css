@@ -215,9 +215,12 @@ main { padding: 1.75rem 2rem 3rem; max-width: 1180px; }
 /* ── 스탯 타일 (그라데이션 코너 + 리프트) ───────────────── */
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(158px, 1fr));
+  grid-template-columns: repeat(4, 1fr);
   gap: 0.75rem;
   margin-bottom: 2rem;
+}
+@media (max-width: 760px) {
+  .cards { grid-template-columns: repeat(auto-fit, minmax(158px, 1fr)); }
 }
 .card {
   position: relative;

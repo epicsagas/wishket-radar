@@ -41,9 +41,16 @@
 {:else}
   <div class="cards">
     <div class="card">
-      <div class="num">{st.open}</div>
-      <div class="lbl">진행 중</div>
-      <div class="hint">관심~미팅</div>
+      <div class="num">{st.by_status['관심'] ?? 0}</div>
+      <div class="lbl">관심</div>
+      <div class="hint">지원 전 검토</div>
+    </div>
+    <div class="card">
+      <div class="num">
+        {(st.by_status['지원'] ?? 0) + (st.by_status['상담'] ?? 0) + (st.by_status['미팅'] ?? 0)}
+      </div>
+      <div class="lbl">지원 중</div>
+      <div class="hint">지원~미팅</div>
     </div>
     <div class="card">
       <div class="num" style="color: var(--info)">{st.by_status['미팅'] ?? 0}</div>
@@ -51,9 +58,16 @@
       <div class="hint">삼자 미팅 단계</div>
     </div>
     <div class="card">
-      <div class="num" style="color: var(--good)">{st.won}</div>
-      <div class="lbl">체결 이상</div>
-      <div class="hint">체결·진행·완료</div>
+      <div class="num" style="color: var(--good)">
+        {(st.by_status['체결'] ?? 0) + (st.by_status['진행 중'] ?? 0)}
+      </div>
+      <div class="lbl">체결·진행</div>
+      <div class="hint">계약~수행 중</div>
+    </div>
+    <div class="card">
+      <div class="num" style="color: var(--good)">{st.by_status['완료'] ?? 0}</div>
+      <div class="lbl">완료</div>
+      <div class="hint">대금 지급 종료</div>
     </div>
     <div class="card">
       <div class="num" style="color: var(--bad)">{st.lost}</div>
