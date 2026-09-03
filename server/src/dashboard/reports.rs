@@ -114,10 +114,7 @@ pub fn parse(md: &str, report_name: &str) -> HashMap<String, Analysis> {
         }
         if let Some(v) = field_after(t, "AI 평가") {
             // "85점 · 모델: claude-opus-5" — 점수와 모델은 각각 독립 추출(한쪽만 있어도 OK)
-            a.score = v
-                .split('점')
-                .next()
-                .and_then(|s| s.trim().parse().ok());
+            a.score = v.split('점').next().and_then(|s| s.trim().parse().ok());
             if let Some((_, m)) = v.split_once("모델") {
                 let m = m.trim_start_matches([':', ' ']).trim();
                 a.model = (!m.is_empty()).then(|| m.to_string());
