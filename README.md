@@ -21,6 +21,14 @@
 
 ## 설치
 
+### Grok Build (xAI)
+
+```bash
+grok plugin install epicsagas/wishket-radar --trust
+```
+
+Grok reads skills from `skills/` and agents from `agents/` at the plugin root. No extra configuration needed.
+
 호스트에 플러그인을 설치한 뒤, 채팅에서 온보딩을 한 번 돌리면 MCP 바이너리 확인부터 매칭 프로필까지 끝난다. 프리빌트 바이너리는 온보딩이 못 찾거나 MCP만 따로 쓸 때의 선택 사항이다.
 
 ### Claude Code
