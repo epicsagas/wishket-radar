@@ -53,7 +53,13 @@ Inferrable fields (Title, Tech, Details, Background, Core Features, Phases) shou
 - **Portfolio Title**: Format as "What was built and what outcome was achieved" (e.g., "LMS 연동 AI 챗봇 구축으로 고객 대응 시간 단축"). Include metrics if present.
 - **Category / Domain**: Propose candidates; user confirms. Maximum 3 domains.
 - **Related Tech**: Comma-separated (e.g., React, Node.js, AWS). Only confirmed manifest technologies, omitting versions.
-- **Project Details**: Paragraphs structured as: Background -> Process -> Technical Challenges -> Solutions. Prioritize quantitative indicators.
+- **Project Details**: Must match the Wishket form's four fixed subfields, in order:
+  1) **포트폴리오 소개**: one line covering the service category (커머스, AI, SaaS 등) and the main target (주부, 청소년, 소상공인 등). e.g. "주부들을 위한 생활용품 커머스 개발".
+  2) **작업 범위**: participation scope plus 지원환경. Scope example: "화면 설계, UI/UX 디자인, 서버 구축, Front-end 개발, 관리자 페이지 개발". 지원환경 example: "반응형 웹, Android, iOS" — write it as a second line, not merged into the scope list.
+  3) **주요 업무**: key features and pages of the service as a comma-separated list. e.g. "회원등급제 기능, 숙소 추천 로직 구성, GPS 기반 숙소 리스트, 실시간 예약 및 결제 페이지".
+  4) **주안점**: what the build prioritized. e.g. "개인 정보에 대한 보안, 트렌디한 디자인".
+
+  Narrative analysis (challenges, solutions, process) feeds the phrasing of 3) and 4) — do not emit free-form paragraphs under 프로젝트 상세.
 - **Project Background**: 1) Problem 2) Goal 3) Key Focus.
 - **Accomplishments / Phases / Feature Descriptions**: Max 120 Korean characters each. Trim cleanly without truncating sentences mid-thought.
 - **Phases**: Chronological order with concise phase names (e.g., 기획, 설계, 개발, 테스트, 런칭) and deliverables in description.
@@ -95,14 +101,20 @@ Content format:
 결과물 URL: {URL}
 
 [프로젝트 상세]
-{Body}
+1) 포트폴리오 소개
+{서비스 카테고리 + 메인 타깃 한 줄. 예) 주부들을 위한 생활용품 커머스 개발}
+2) 작업 범위
+{참여 범위. 예) 화면 설계, UI/UX 디자인, 서버 구축, Front-end 개발, 관리자 페이지 개발}
+{지원환경. 예) 반응형 웹, Android, iOS}
+3) 주요 업무
+{주요 기능·페이지. 예) 회원등급제 기능, 숙소 추천 로직 구성, GPS 기반 숙소 리스트, 실시간 예약 및 결제 페이지}
+4) 주안점
+{중점 사항. 예) 개인 정보에 대한 보안, 트렌디한 디자인}
 
 [프로젝트 배경]
 1) 문제점
 - ...
 2) 프로젝트 목표
-- ...
-3) 주안점
 - ...
 
 [프로젝트 성과]
