@@ -2,7 +2,7 @@
   import { appState, STATUSES, STAGE_HINT, refresh, type FileEntry } from '../store'
   import { api } from '../api'
   import { go } from '../router'
-  import { dday, ddayLabel, ddayTone, gradeTone, statusTone } from '../lib/fmt'
+  import { dday, ddayLabel, ddayTone, gradeTone, statusTone, wonMan } from '../lib/fmt'
 
   let { id }: { id: string } = $props()
 
@@ -132,6 +132,17 @@
 
         {#if cached?.budget}<dt>예산</dt><dd>{cached.budget}</dd>{/if}
         {#if cached?.duration}<dt>예상 기간</dt><dd>{cached.duration}</dd>{/if}
+        {#if cached?.daily_won}
+          <dt>일 단위</dt>
+          <dd>
+            {wonMan(cached.daily_won[0])}만{cached.daily_won[0] !== cached.daily_won[1]
+              ? `~${wonMan(cached.daily_won[1])}만`
+              : ''}원
+            <span class="dim calc">
+              {cached.budget_monthly_won != null ? '월 금액 ÷ 30' : `총액 ÷ ${cached.duration_days}일`}
+            </span>
+          </dd>
+        {/if}
         {#if cached?.role}<dt>역할</dt><dd>{cached.role}</dd>{/if}
         {#if item.url}
           <dt>공고</dt>
@@ -228,6 +239,7 @@
   dt { color: var(--faint); font-size: 0.78rem; }
   dd { margin: 0; font-size: 0.86rem; }
   .hint { font-size: 0.72rem; margin-top: 0.25rem; }
+  .calc { font-size: 0.72rem; margin-left: 0.3rem; }
   .body { padding: 1rem 1.15rem 1.3rem; }
   .note { white-space: pre-wrap; font-size: 0.86rem; color: var(--muted); }
   .matched .badge { margin: 0 0.25rem 0.25rem 0; }

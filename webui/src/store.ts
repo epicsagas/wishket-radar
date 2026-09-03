@@ -62,6 +62,10 @@ export interface CachedDetail {
   skills: string[]
   budget: string | null
   duration: string | null
+  budget_monthly_won: number | null
+  budget_total_won: [number, number] | null
+  duration_days: number | null
+  daily_won: [number, number] | null
   private_matching: boolean | null
   detail_fetched_at: string | null
 }

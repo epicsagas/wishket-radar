@@ -34,6 +34,19 @@ pub struct SeenEntry {
     pub budget: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration: Option<String>,
+    // --- 예산·기간 수치 지표 (원문 문자열에서 계산해 기록) ----------------
+    /// 월 단위 예산(원). "월 금액 X원 /월" 표기에서만.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget_monthly_won: Option<u64>,
+    /// 총액 예산 (min, max) 원.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget_total_won: Option<(u64, u64)>,
+    /// 예상 기간(일).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration_days: Option<u32>,
+    /// 일 단위 금액 (min, max) 원 — 월 금액은 ÷30, 총액은 ÷기간.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub daily_won: Option<(u64, u64)>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub deadline: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -62,6 +75,23 @@ pub struct SeenEntry {
     /// 상세를 마지막으로 가져온 시각 (ISO). 재조회 판단용.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detail_fetched_at: Option<String>,
+}
+
+impl SeenEntry {
+    /// 예산·기간 원문에서 수치 지표를 재계산해 기록한다.
+    /// 원문이 정규 소스라 항상 덮어쓴다. 바뀌었으면 true(저장 필요).
+    pub fn recompute_budget(&mut self) -> bool {
+        let m = crate::wishket::budget_metrics(self.budget.as_deref(), self.duration.as_deref());
+        let changed = self.budget_monthly_won != m.monthly_won
+            || self.budget_total_won != m.total_won
+            || self.duration_days != m.days
+            || self.daily_won != m.daily_won;
+        self.budget_monthly_won = m.monthly_won;
+        self.budget_total_won = m.total_won;
+        self.duration_days = m.days;
+        self.daily_won = m.daily_won;
+        changed
+    }
 }
 
 /// 인박스 트리아지 결과.

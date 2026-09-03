@@ -49,6 +49,8 @@ fn backfill_from_card(e: &mut state::SeenEntry, c: &ProjectCard) {
     if e.private_matching.is_none() {
         e.private_matching = c.private_matching;
     }
+    // 예산·기간 원문이 채워졌으면 수치 지표도 갱신
+    e.recompute_budget();
 }
 
 fn json_result(v: Value) -> CallToolResult {

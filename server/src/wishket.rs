@@ -346,6 +346,108 @@ fn find_job_posting(doc: &Html) -> Option<JobPosting> {
     None
 }
 
+// ---------------------------------------------------------------------------
+// 예산·기간 수치화 — 카드 표기("예상 금액 8,000,000원")와 상세 baseSalary
+// ("2,000만원 (부가세 별도)", 수치형 "15000000~20000000")를 같은 규칙으로.
+// state.json에 기록해 세션·머신 무관 동일 표시의 근거가 된다.
+// ---------------------------------------------------------------------------
+
+/// 예산·기간 원문에서 계산한 수치 지표.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Serialize)]
+pub struct BudgetMetrics {
+    /// 월 단위 예산("월 금액 X원 /월") — 원.
+    pub monthly_won: Option<u64>,
+    /// 총액 예산 (min, max) — 원. 단일 금액이면 min == max.
+    pub total_won: Option<(u64, u64)>,
+    /// 예상 기간(일).
+    pub days: Option<u32>,
+    /// 일 단위 금액 (min, max) — 원. 월 금액은 ÷30, 총액은 ÷기간.
+    pub daily_won: Option<(u64, u64)>,
+}
+
+/// 문자열에서 금액 전부 추출. "억"/"만" 배수 적용, 접미 없으면 원으로 본다.
+fn amounts(s: &str) -> Vec<u64> {
+    let cs: Vec<char> = s.chars().collect();
+    let mut out = Vec::new();
+    let mut i = 0;
+    while i < cs.len() {
+        if !cs[i].is_ascii_digit() {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < cs.len() && (cs[i].is_ascii_digit() || cs[i] == ',') {
+            i += 1;
+        }
+        let raw: String = cs[start..i].iter().filter(|c| **c != ',').collect();
+        let Ok(mut n) = raw.parse::<u64>() else {
+            continue;
+        };
+        match cs.get(i) {
+            Some('억') => {
+                n *= 100_000_000;
+                i += 1;
+            }
+            Some('만') => {
+                n *= 10_000;
+                i += 1;
+            }
+            _ => {}
+        }
+        if matches!(cs.get(i), Some('원')) {
+            i += 1;
+        }
+        out.push(n);
+    }
+    out
+}
+
+/// 문자열에서 첫 일수. "N일" 또는 "N개월"(×30). 숫자 뒤에 둘 다 아니면 없음.
+fn days_of(s: &str) -> Option<u32> {
+    let cs: Vec<char> = s.chars().collect();
+    let mut i = 0;
+    while i < cs.len() {
+        if !cs[i].is_ascii_digit() {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < cs.len() && cs[i].is_ascii_digit() {
+            i += 1;
+        }
+        let raw: String = cs[start..i].iter().collect();
+        let Ok(n) = raw.parse::<u32>() else { continue };
+        return match cs.get(i) {
+            Some('일') => Some(n),
+            Some('개') if cs.get(i + 1) == Some(&'월') => Some(n * 30),
+            _ => None,
+        };
+    }
+    None
+}
+
+/// 예산·기간 원문 → 수치 지표. "협의 후 결정"처럼 수치가 없으면 전부 None.
+pub fn budget_metrics(budget: Option<&str>, duration: Option<&str>) -> BudgetMetrics {
+    let mut m = BudgetMetrics::default();
+    if let Some(b) = budget {
+        let a = amounts(b);
+        let monthly = b.contains("/월") || b.contains("월 금액");
+        match (a.as_slice(), monthly) {
+            ([v], true) => m.monthly_won = Some(*v),
+            ([min, max, ..], _) => m.total_won = Some((*min, (*max).max(*min))),
+            ([v], false) => m.total_won = Some((*v, *v)),
+            _ => {}
+        }
+    }
+    m.days = duration.and_then(days_of);
+    m.daily_won = match (m.monthly_won, m.total_won, m.days) {
+        (Some(mo), _, _) => Some((mo / 30, mo / 30)),
+        (None, Some((min, max)), Some(d)) if d > 0 => Some((min / d as u64, max / d as u64)),
+        _ => None,
+    };
+    m
+}
+
 /// Parse detail page. Combines JSON-LD JobPosting (title/description/dates)
 /// with the condition rows and skill tags from the HTML body.
 /// JobPosting JSON-LD가 없는 페이지(마감 등)에서 제목을 건진다.
@@ -353,7 +455,11 @@ fn find_job_posting(doc: &Html) -> Option<JobPosting> {
 fn fallback_title(doc: &Html) -> Option<String> {
     let clean = |t: String| -> Option<String> {
         let t = t.split('·').next().unwrap_or(&t).trim().to_string();
-        (!t.is_empty()).then_some(t)
+        // 사이트 공통 문구는 공고 제목이 아니다 — JSON-LD/h1/og:title이 없는
+        // 페이지(비공개·마감)에서 <title> 태그라인이 새어 들어온다.
+        let site_tagline =
+            t.contains("위시켓") || t.contains("Wishket") || t.contains("IT 프로젝트 플랫폼");
+        (!t.is_empty() && !site_tagline).then_some(t)
     };
     for s in ["h1.project-detail-title", "h1"] {
         if let Some(t) = doc.select(&sel(s)).next().map(text_of).and_then(&clean) {
@@ -433,11 +539,24 @@ pub fn parse_detail(id: &str, html: &str) -> ProjectDetail {
     // 상세 페이지엔 카드 DOM(project-info-box)이 없어 parse_cards가 폴백됨 —
     // 프라이빗 매칭 뱃지는 문서 레벨(div.status-guide)에서 재확인
     if card.private_matching.is_none() {
-        card.private_matching = Some(
-            doc.select(&sel("div.status-mark.private-mark"))
-                .next()
-                .is_some(),
-        );
+        // "모집 중인 다른 프로젝트" 추천 카드에도 똑같은 배지 DOM이 온다 —
+        // 조상에 similar 섹션이 있으면 현재 공고의 것이 아니므로 무시한다.
+        let private_mark = sel("div.status-mark.private-mark");
+        card.private_matching = Some(doc.select(&private_mark).any(|e| {
+            let mut node = doc.tree.get(e.id());
+            while let Some(n) = node {
+                let in_similar = n
+                    .value()
+                    .as_element()
+                    .and_then(|el| el.attr("class"))
+                    .is_some_and(|c| c.contains("similar"));
+                if in_similar {
+                    return false;
+                }
+                node = n.parent();
+            }
+            true
+        }));
     }
 
     let salary = jp
@@ -715,6 +834,77 @@ mod tests {
         let d = parse_detail("158089", html);
         assert_eq!(d.card.title, "AI 기반 문서 영상 자동생성 개발");
         assert_eq!(d.conditions.len(), 1);
+    }
+
+    #[test]
+    fn budget_metrics_from_real_card_strings() {
+        use super::budget_metrics as bm;
+        // 총액 + 기간 → 일 단위
+        let m = bm(Some("예상 금액 1,000,000원"), Some("예상 기간 5일"));
+        assert_eq!(m.total_won, Some((1_000_000, 1_000_000)));
+        assert_eq!(m.days, Some(5));
+        assert_eq!(m.daily_won, Some((200_000, 200_000)));
+        // 범위 예산("만" 배수)
+        let m = bm(Some("1,500만~2,000만원"), Some("예상 기간 90일"));
+        assert_eq!(m.total_won, Some((15_000_000, 20_000_000)));
+        assert_eq!(m.daily_won, Some((166_666, 222_222)));
+        // 월 금액 → ÷30, 기간이 있어도 월 기준
+        let m = bm(Some("월 금액 7,000,000원 /월"), Some("예상 기간 300일"));
+        assert_eq!(m.monthly_won, Some(7_000_000));
+        assert_eq!(m.daily_won, Some((233_333, 233_333)));
+        // baseSalary 수치형(단위 없음, KRW 접미)
+        let m = bm(Some("15000000~20000000 KRW"), None);
+        assert_eq!(m.total_won, Some((15_000_000, 20_000_000)));
+        assert_eq!(m.daily_won, None, "기간 없으면 일 단위도 없음");
+        // "억"
+        let m = bm(Some("3억원"), Some("2개월"));
+        assert_eq!(m.total_won, Some((300_000_000, 300_000_000)));
+        assert_eq!(m.days, Some(60));
+        // 협의 — 전부 None
+        let m = bm(Some("예상 금액 협의 후 결정"), Some("예상 기간 90일"));
+        assert_eq!(m.total_won, None);
+        assert_eq!(m.monthly_won, None);
+        assert_eq!(m.days, Some(90));
+        assert_eq!(m.daily_won, None);
+    }
+
+    #[test]
+    fn private_badge_in_similar_section_is_ignored() {
+        // "모집 중인 다른 프로젝트" 추천 카드의 프라이빗 배지는 현재 공고 것이 아니다
+        let html = r#"<html><head>
+            <title>의료정보시스템 유지보수 · 위시켓(Wishket) - 프로젝트</title>
+            </head><body>
+            <div class="project-detail-condition-row"><div>모집 마감일</div><div>2026년 09월 08일</div></div>
+            <h2 class="project-similar-layer-title">모집 중인 다른 프로젝트</h2>
+            <div class="project-similar-layer"><div class="similar-project-card">
+              <div class="project-status-label"><div class="status-mark private-mark">프라이빗 매칭</div></div>
+            </div></div>
+            </body></html>"#;
+        let d = parse_detail("158151", html);
+        assert_eq!(d.card.private_matching, Some(false));
+    }
+
+    #[test]
+    fn private_badge_in_main_section_is_detected() {
+        let html = r#"<html><body>
+            <div class="project-status-label"><div class="status-mark private-mark">프라이빗 매칭</div></div>
+            <div class="project-detail-condition-row"><div>모집 마감일</div><div>2026년 09월 08일</div></div>
+            </body></html>"#;
+        let d = parse_detail("1", html);
+        assert_eq!(d.card.private_matching, Some(true));
+    }
+
+    #[test]
+    fn site_tagline_is_not_a_title() {
+        // 비공개 공고 상세는 제목 DOM이 없다 — 사이트 태그라인이 제목으로 새면
+        // 서로 다른 공고가 전부 같은 제목으로 보여 중복처럼 보인다.
+        let html = r#"<html><head>
+            <title>위시켓(Wishket) - 대한민국 대표 IT 프로젝트 플랫폼</title>
+            <meta property="og:title" content="대한민국 대표 IT 프로젝트 플랫폼">
+            <script type="application/ld+json">{"@type":"BreadcrumbList"}</script>
+            </head><body></body></html>"#;
+        let d = parse_detail("158092", html);
+        assert!(d.card.title.trim().is_empty(), "{:?}", d.card.title);
     }
 
     #[test]

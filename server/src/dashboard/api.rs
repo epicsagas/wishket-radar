@@ -152,7 +152,7 @@ fn read_text(path: &std::path::Path) -> Option<String> {
 /// GET /api/state — 대시보드 집계 뷰.
 async fn get_state(State(app): ApiState) -> Result<Json<Value>, ApiError> {
     let dir = &app.state_dir;
-    let scan = state::load();
+    let mut scan = state::load();
     let profile_summary = read_text(&dir.join("profile.yaml")).and_then(|raw| {
         serde_yaml::from_str::<Profile>(&raw)
             .ok()
@@ -177,6 +177,17 @@ async fn get_state(State(app): ApiState) -> Result<Json<Value>, ApiError> {
         .map(|p| p.display().to_string());
     let loaded = apps::load(dir);
     let today_s = today();
+    // 구 state의 예산·기간 원문에 수치 지표가 없으면 채워 저장한다(1회 셀프힐).
+    // 지표는 데이터로 기록되므로 세션·머신이 바뀌어도 동일하게 보인다.
+    {
+        let mut healed = false;
+        for e in scan.seen.values_mut() {
+            healed |= e.recompute_budget();
+        }
+        if healed {
+            let _ = state::save(&scan);
+        }
+    }
     // 파이프라인(yaml)에 이미 들어간 공고 id — merge로 소유권이 옮겨지기 전에 뽑는다
     let pipeline_ids: std::collections::HashSet<String> = loaded
         .file
@@ -218,6 +229,10 @@ async fn get_state(State(app): ApiState) -> Result<Json<Value>, ApiError> {
                     "skills": e.skills,
                     "budget": e.budget,
                     "duration": e.duration,
+                    "budget_monthly_won": e.budget_monthly_won,
+                    "budget_total_won": e.budget_total_won,
+                    "duration_days": e.duration_days,
+                    "daily_won": e.daily_won,
                     "private_matching": e.private_matching,
                     "detail_fetched_at": e.detail_fetched_at,
                 }),
@@ -572,10 +587,15 @@ async fn fetch_inbox_detail(
 
     let mut scan = state::load();
     if let Some(e) = scan.seen.get_mut(&id) {
-        e.title = detail.card.title.clone();
+        // 제목은 스캔 카드가 준 값이 정규 소스 — 상세 페이지(특히 비공개·마감)는
+        // 실제 제목 DOM이 없어 사이트 태그라인이 넘어올 수 있어 덮지 않는다.
+        if e.title.trim().is_empty() {
+            e.title = detail.card.title.clone();
+        }
         e.url = Some(detail.card.url.clone());
-        if detail.card.budget.is_some() {
-            e.budget = detail.card.budget.clone();
+        if e.budget.is_none() {
+            // 상세 페이지엔 카드 DOM이 없다 — JSON-LD baseSalary로 채운다
+            e.budget = detail.card.budget.clone().or_else(|| detail.salary.clone());
         }
         if detail.card.duration.is_some() {
             e.duration = detail.card.duration.clone();
@@ -613,6 +633,8 @@ async fn fetch_inbox_detail(
             })
             .unwrap_or_default();
         e.detail_fetched_at = Some(state::now_iso());
+        // 원문(예산·기간)이 갱신됐으니 수치 지표도 다시 계산해 기록
+        e.recompute_budget();
         state::save(&scan).map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
 
@@ -738,8 +760,10 @@ mod tests {
             !inbox_visible("7", &e, &ids),
             "미분류라도 yaml에 있으면 파이프라인 전용"
         );
-        let mut skipped = SeenEntry::default();
-        skipped.triage = Some(Triage::Skipped);
+        let skipped = SeenEntry {
+            triage: Some(Triage::Skipped),
+            ..Default::default()
+        };
         assert!(
             !inbox_visible("1", &skipped, &ids),
             "스킵은 인박스에서 사라짐"

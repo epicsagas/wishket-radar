@@ -32,6 +32,13 @@ export function gradeTone(grade: string): string {
   return 'muted'
 }
 
+/// 원 → "N만" 표기. 100만 미만은 소수 1자리(23.3만), 이상은 정수(1,500만).
+export function wonMan(won: number): string {
+  const mw = won / 10000
+  if (mw >= 100) return Math.round(mw).toLocaleString('ko-KR')
+  return (Math.round(mw * 10) / 10).toLocaleString('ko-KR')
+}
+
 export function statusTone(status: string): string {
   switch (status) {
     case '완료':
