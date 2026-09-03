@@ -58,6 +58,7 @@ Template format:
 ### 1. [A] {제목}
 - URL: {url} · {budget} · {duration} · {role}/{level} · {location}
 - 키워드 매칭: {score}점 (matched: ..., missing: ...)
+- AI 평가: {analyst 점수}점 · 모델: {model}
 - 적합도 판단: {analyst output}
 - 주의점: {analyst output}
 - 제안 방향: {analyst output 1-2 lines}
@@ -71,6 +72,8 @@ Template format:
 ```
 
 Fit grades use the analyst rating (A/B/C): A = direct core stack match + reasonable terms, B = partial match or uncertain terms, C = large stack mismatch.
+
+The `AI 평가` line records the analyst's numeric score and the model that produced it. `wishket-analyst` runs with `model: inherit`, so the dispatcher stamps the model field with its own session model identifier (the model name stated in the session context, e.g. `claude-opus-5`) — the analyst itself does not report the model.
 
 ## Step 5: Chat Summary
 

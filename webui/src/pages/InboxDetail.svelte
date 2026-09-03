@@ -31,6 +31,8 @@
       fit: string | null
       caution: string | null
       proposal: string | null
+      score: number | null
+      model: string | null
       report: string | null
     } | null
   }
@@ -103,6 +105,11 @@
     {/if}
     {#if item?.score != null}
       <span class="badge muted">매칭 {item.score}</span>
+    {/if}
+    {#if item?.analysis?.score != null}
+      <span class="badge muted" title={`AI 평가 점수 · 모델: ${item.analysis.model ?? '미기록'}`}>
+        AI {item.analysis.score}
+      </span>
     {/if}
   </div>
 </div>

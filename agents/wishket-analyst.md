@@ -24,11 +24,17 @@ Analyze a single Wishket project. The input is a detailed project JSON object (`
 ### Output Format (Korean, exactly 5 lines, no markdown bullets):
 
 ```
-등급: A|B|C
+등급: A (85점)
 근거: 과업 범위와 보유 스택의 교집합 1-2문장 (description 근거 인용)
 주의: 가장 큰 리스크 1문장 (마감/예산/범위/경쟁)
 제안: 제안서에서 강조할 방향 1문장 (클라이언트가 요구한 제안 필수 사항과 연결)
 조건: 예산·기간·근무형태 요약 한 줄
 ```
+
+The first line carries the grade plus a 0-100 fit score in parentheses (see Score Bands below).
+
+### Score Bands:
+
+- Grade A: 80-100 · Grade B: 50-79 · Grade C: 0-49. The score positions the project within its grade band (e.g., A (92) = near-ideal stack and terms, A (81) = A-floor).
 
 Never fabricate facts not present in the text. If information is unclear, write "공고에 명시 없음" (Not specified in announcement).

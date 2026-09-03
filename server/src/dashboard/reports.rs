@@ -19,6 +19,10 @@ pub struct Analysis {
     pub caution: Option<String>,
     /// "제안 방향:" 뒤 서술
     pub proposal: Option<String>,
+    /// "AI 평가: 85점" 의 수치
+    pub score: Option<u32>,
+    /// "· 모델: claude-opus-5" 의 모델명
+    pub model: Option<String>,
     /// 어느 리포트에서 왔는지 (파일명)
     pub report: Option<String>,
 }
@@ -108,7 +112,17 @@ pub fn parse(md: &str, report_name: &str) -> HashMap<String, Analysis> {
                 cur_id = Some(id);
             }
         }
-        if let Some(v) = field_after(t, "적합도 판단") {
+        if let Some(v) = field_after(t, "AI 평가") {
+            // "85점 · 모델: claude-opus-5" — 점수와 모델은 각각 독립 추출(한쪽만 있어도 OK)
+            a.score = v
+                .split('점')
+                .next()
+                .and_then(|s| s.trim().parse().ok());
+            if let Some((_, m)) = v.split_once("모델") {
+                let m = m.trim_start_matches([':', ' ']).trim();
+                a.model = (!m.is_empty()).then(|| m.to_string());
+            }
+        } else if let Some(v) = field_after(t, "적합도 판단") {
             a.fit = Some(v);
         } else if let Some(v) = field_after(t, "주의점") {
             a.caution = Some(v);
@@ -152,6 +166,7 @@ mod tests {
 ### 1. [A] 게임 로열티 정산·보고서 자동화 시스템 구축
 - URL: https://www.wishket.com/project/158052/ · 1,500만~2,000만원 · 90일
 - 키워드 매칭: 48점 (matched: 결제/핀테크, AI/LLM/RAG)
+- AI 평가: 85점 · 모델: claude-opus-5
 - 적합도 판단: 정산·환율 과업이 결제 도메인 경험과 직결.
 - 주의점: 마감 2026-09-07 (5일) — 즉시 제안 시작 필요.
 - 제안 방향: 로우 데이터 처리 방안을 최중요로 구체 제시.
@@ -181,8 +196,14 @@ mod tests {
         assert!(a.caution.as_deref().unwrap().contains("2026-09-07"));
         assert!(a.proposal.as_deref().unwrap().contains("로우 데이터"));
         assert_eq!(a.report.as_deref(), Some("2026-09-02-1117.md"));
+        assert_eq!(a.score, Some(85));
+        assert_eq!(a.model.as_deref(), Some("claude-opus-5"));
 
-        assert_eq!(m.get("157885").unwrap().grade.as_deref(), Some("B"));
+        // AI 평가 라인 없는 구형 리포트 항목 — 점수·모델 없이 파싱
+        let old = m.get("157885").unwrap();
+        assert_eq!(old.grade.as_deref(), Some("B"));
+        assert_eq!(old.score, None);
+        assert_eq!(old.model, None);
     }
 
     #[test]
@@ -191,6 +212,16 @@ mod tests {
         assert!(!m
             .values()
             .any(|a| a.title.as_deref().unwrap_or("").contains("소개팅앱")));
+    }
+
+    #[test]
+    fn ai_score_without_model_still_parses() {
+        let md = "### 1. [B] 제목\n- URL: https://www.wishket.com/project/7/\n\
+                  - AI 평가: 60점\n- 적합도 판단: 내용\n";
+        let m = parse(md, "r.md");
+        let a = m.get("7").expect("7");
+        assert_eq!(a.score, Some(60));
+        assert_eq!(a.model, None);
     }
 
     #[test]

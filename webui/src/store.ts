@@ -47,6 +47,8 @@ export interface Analysis {
   fit: string | null
   caution: string | null
   proposal: string | null
+  score: number | null
+  model: string | null
   report: string | null
 }
 
