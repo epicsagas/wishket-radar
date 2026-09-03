@@ -111,6 +111,14 @@
         AI {item.analysis.score}
       </span>
     {/if}
+    {#if item && !item.triage}
+      <span class="triage" title="이 공고를 파이프라인에 넣을까요?">
+        <button onclick={() => triage('interested')} disabled={busy}>관심 · 파이프라인</button>
+        <button class="ghost" onclick={() => triage('skipped')} disabled={busy}>스킵</button>
+      </span>
+    {:else if item?.triage}
+      <span class="badge muted">이미 {item.triage === 'interested' ? '관심' : '스킵'} 처리됨</span>
+    {/if}
   </div>
 </div>
 
@@ -202,19 +210,6 @@
     </div>
   </div>
 
-  <div class="actions panel">
-    <div class="dim" style="font-size: 0.82rem">
-      {#if item.triage}
-        이미 <strong>{item.triage === 'interested' ? '관심' : '스킵'}</strong> 처리됨 ({item.triaged_at})
-      {:else}
-        이 공고를 파이프라인에 넣을까요?
-      {/if}
-    </div>
-    <div class="row">
-      <button onclick={() => triage('interested')} disabled={busy}>관심 · 파이프라인 추가</button>
-      <button class="ghost" onclick={() => triage('skipped')} disabled={busy}>스킵</button>
-    </div>
-  </div>
 {/if}
 
 <style>
@@ -237,9 +232,14 @@
   .srcnote { font-size: 0.7rem; font-weight: 400; text-transform: none; letter-spacing: 0; margin-left: 0.5rem; }
   hr { border: none; border-top: 1px solid var(--border); margin: 1.3rem 0; }
   .desc { white-space: pre-wrap; font-size: 0.86rem; line-height: 1.75; color: var(--muted); }
-  .actions {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 1rem; padding: 0.85rem 1.15rem; margin-top: 1.1rem; flex-wrap: wrap;
+  .triage { display: inline-flex; gap: 0.35rem; margin-left: 0.4rem; }
+  /* 모바일: 제목과 배지·트리아지 버튼을 세로로 스택 — 한 줄 baseline 정렬이
+     긴 제목+버튼을 비좁게 눌러 화면을 넘치게 한다 */
+  @media (max-width: 760px) {
+    .page-head { flex-direction: column; align-items: stretch; gap: 0.55rem; }
+    .page-head .row { flex-wrap: wrap; justify-content: flex-start; }
+    .triage { width: 100%; margin-left: 0; }
+    .triage button { flex: 1; }
   }
   @media (max-width: 860px) { .detail { grid-template-columns: 1fr; } }
 </style>

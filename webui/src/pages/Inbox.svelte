@@ -54,6 +54,25 @@
       busy = null
     }
   }
+
+  /// 매칭 점수가 0이거나 상세가 없는 건 — 리스트에서 바로 점수 재계산+상세 캐시.
+  /// 서버가 Crawl-delay를 지키므로 몇 초 걸릴 수 있다.
+  const needsFetch = (it: InboxItem) =>
+    (it.score ?? 0) === 0 || !$appState?.details?.[it.id]?.description
+
+  async function fetchDetail(id: string) {
+    busy = id
+    error = ''
+    try {
+      await api(`/api/inbox/${encodeURIComponent(id)}/fetch`, { method: 'POST' })
+      await refresh()
+      await load()
+    } catch (e) {
+      error = String(e)
+    } finally {
+      busy = null
+    }
+  }
 </script>
 
 <div class="page-head">
@@ -130,6 +149,11 @@
         <div class="actions">
           <button onclick={() => triage(it.id, 'interested')} disabled={busy === it.id}>관심</button>
           <button class="ghost" onclick={() => triage(it.id, 'skipped')} disabled={busy === it.id}>스킵</button>
+          {#if needsFetch(it)}
+            <button class="ghost" onclick={() => fetchDetail(it.id)} disabled={busy === it.id} title="위시켓에서 상세를 가져와 매칭 점수를 다시 계산합니다 (몇 초 걸릴 수 있음)">
+              {busy === it.id ? '불러오는 중…' : '점수·상세 갱신'}
+            </button>
+          {/if}
         </div>
       </article>
     {/each}

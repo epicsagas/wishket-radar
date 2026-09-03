@@ -558,6 +558,21 @@ async fn fetch_inbox_detail(
         .await
         .map_err(|e| err(StatusCode::BAD_GATEWAY, e))?;
 
+    // 차단·삭제된 공고는 사이트 태그라인만 든 셸 페이지가 온다. 파싱 결과가
+    // 텅 비었으면 실패로 돌려 캐시를 절대 덮어쓰지 않는다 — 빈 결과로 기존
+    // 상세(본문·조건·점수)가 지워지는 사고를 막는다.
+    let parsed_anything = detail.description.is_some()
+        || !detail.conditions.is_empty()
+        || detail.salary.is_some()
+        || detail.card.budget.is_some()
+        || !detail.card.skills.is_empty();
+    if !parsed_anything {
+        return Err(err(
+            StatusCode::BAD_GATEWAY,
+            "공고 페이지를 가져오지 못했습니다 (차단 또는 삭제 가능). 캐시는 유지됩니다 — 잠시 후 재시도하세요.",
+        ));
+    }
+
     // 매칭 점수는 프로필 기준으로 다시 계산
     let score = crate::profile::load().ok().map(|prof| {
         let text = format!(
@@ -617,21 +632,36 @@ async fn fetch_inbox_detail(
             e.score = Some(n as u32);
         }
         // 본문까지 캐시한다 — 상세를 다시 열 때 재조회하지 않기 위해서.
-        e.description = detail.description.clone();
-        e.conditions = detail.conditions.clone();
-        e.role = detail.card.role.clone();
-        e.level = detail.card.level.clone();
-        e.location = detail.card.location.clone();
-        e.matched = score
+        // 부분 파싱 페이지가 올 수 있으니 값 있는 것만 덮어쓴다(빈 값으로 지우지 않는다).
+        if detail.description.is_some() {
+            e.description = detail.description.clone();
+        }
+        if !detail.conditions.is_empty() {
+            e.conditions = detail.conditions.clone();
+        }
+        if detail.card.role.is_some() {
+            e.role = detail.card.role.clone();
+        }
+        if detail.card.level.is_some() {
+            e.level = detail.card.level.clone();
+        }
+        if detail.card.location.is_some() {
+            e.location = detail.card.location.clone();
+        }
+        if let Some(matched) = score
             .as_ref()
             .and_then(|m| m.get("matched"))
             .and_then(Value::as_array)
             .map(|a| {
                 a.iter()
                     .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
+                    .collect::<Vec<_>>()
             })
-            .unwrap_or_default();
+        {
+            if !matched.is_empty() {
+                e.matched = matched;
+            }
+        }
         e.detail_fetched_at = Some(state::now_iso());
         // 원문(예산·기간)이 갱신됐으니 수치 지표도 다시 계산해 기록
         e.recompute_budget();
