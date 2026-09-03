@@ -1,0 +1,21 @@
+{
+  "name": "wishket-radar",
+  "version": "0.2.0",
+  "description": "위시켓 프로젝트 검색·분석·기술 매칭 에이전트 플러그인",
+  "author": {
+    "name": "epicsagas",
+    "url": "https://github.com/epicsagas"
+  },
+  "homepage": "https://github.com/epicsagas/wishket-radar",
+  "repository": "https://github.com/epicsagas/wishket-radar",
+  "license": "Apache-2.0",
+  "skills": "./skills/",
+  "keywords": [
+    "wishket",
+    "freelance",
+    "job-matching",
+    "mcp",
+    "scraping"
+  ],
+  "agents": "./agents/"
+}
