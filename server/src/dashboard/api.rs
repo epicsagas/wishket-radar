@@ -177,11 +177,22 @@ async fn get_state(State(app): ApiState) -> Result<Json<Value>, ApiError> {
         .map(|p| p.display().to_string());
     let loaded = apps::load(dir);
     let today_s = today();
+    // 파이프라인(yaml)에 이미 들어간 공고 id — merge로 소유권이 옮겨지기 전에 뽑는다
+    let pipeline_ids: std::collections::HashSet<String> = loaded
+        .file
+        .applications
+        .iter()
+        .map(|a| a.id.clone())
+        .collect();
     // 파이프라인 소스: applications.yaml > 인박스 관심.
     let applications = matches::merge(loaded.file.applications, matches::interested(&scan.seen));
     // 리포트의 LLM 분석(등급·주의점·제안 방향) — 기계 점수로는 못 내는 정보
     let analyses = reports::load_all(&dir.join("reports"));
-    let inbox_count = scan.seen.values().filter(|e| e.triage.is_none()).count();
+    let inbox_count = scan
+        .seen
+        .iter()
+        .filter(|(id, e)| inbox_visible(id, e, &pipeline_ids))
+        .count();
     // 캐시된 공고 상세 — 파이프라인 상세 화면이 재조회 없이 본문을 띄운다.
     // 상세 본문이 없어도 카드 정보(예산·기간·프라이빗)만 있으면 포함한다 —
     // 좌측 요약 패널이 상세 불러오기 전에도 조건을 보여줘야 한다.
@@ -452,15 +463,32 @@ async fn get_raw(
     Ok(res)
 }
 
+/// 인박스에 남는 조건 — 미분류이면서 파이프라인(applications.yaml)에도 없는 건.
+/// 스킬이 yaml에 직접 등록한 건은 triage가 비어 있어도 인박스에 띄우면
+/// 파이프라인과 중복으로 보인다. 인박스는 최초 단계 — 파이프라인에 있으면 끝.
+fn inbox_visible(
+    id: &str,
+    e: &state::SeenEntry,
+    pipeline_ids: &std::collections::HashSet<String>,
+) -> bool {
+    e.triage.is_none() && !pipeline_ids.contains(id)
+}
+
 /// GET /api/inbox — 아직 트리아지하지 않은 스캔 결과 (최신 발견순).
 async fn get_inbox(State(app): ApiState) -> Json<Value> {
     let scan = state::load();
     let today_s = today();
     let analyses = reports::load_all(&app.state_dir.join("reports"));
+    let pipeline_ids: std::collections::HashSet<String> = apps::load(&app.state_dir)
+        .file
+        .applications
+        .into_iter()
+        .map(|a| a.id)
+        .collect();
     let mut items: Vec<Value> = scan
         .seen
         .iter()
-        .filter(|(_, e)| e.triage.is_none())
+        .filter(|(id, e)| inbox_visible(id, e, &pipeline_ids))
         .map(|(id, e)| {
             // 카드가 준 "마감 2주 2일 전" 같은 상대 표기를 날짜로 환산한다
             let deadline = e.deadline.as_deref().and_then(|d| {
@@ -697,6 +725,26 @@ pub fn router() -> Router<Arc<AppState>> {
 #[cfg(test)]
 mod tests {
     use super::render_markdown;
+
+    #[test]
+    fn inbox_excludes_yaml_pipeline_items() {
+        use super::inbox_visible;
+        use crate::state::{SeenEntry, Triage};
+        let mut ids = std::collections::HashSet::new();
+        ids.insert("7".to_string());
+        let e = SeenEntry::default();
+        assert!(inbox_visible("1", &e, &ids), "미분류 + yaml 없음 = 인박스");
+        assert!(
+            !inbox_visible("7", &e, &ids),
+            "미분류라도 yaml에 있으면 파이프라인 전용"
+        );
+        let mut skipped = SeenEntry::default();
+        skipped.triage = Some(Triage::Skipped);
+        assert!(
+            !inbox_visible("1", &skipped, &ids),
+            "스킵은 인박스에서 사라짐"
+        );
+    }
 
     #[test]
     fn external_links_open_in_new_tab() {
