@@ -52,17 +52,21 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: webui/package-lock.json
+          cache: pnpm
+          cache-dependency-path: webui/pnpm-lock.yaml
 
       - name: Install deps
-        run: npm --prefix webui ci
+        run: pnpm --dir webui install --frozen-lockfile
 
       - name: Build
-        run: npm --prefix webui run build
+        run: pnpm --dir webui run build
 
       - name: Type check
-        run: npm --prefix webui run check
+        run: pnpm --dir webui run check

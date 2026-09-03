@@ -73,15 +73,18 @@ jobs:
         with:
           persist-credentials: false
           submodules: recursive
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
-          cache-dependency-path: webui/package-lock.json
+          cache: pnpm
+          cache-dependency-path: webui/pnpm-lock.yaml
       - name: Build webui
         run: |
-          npm --prefix webui ci
-          npm --prefix webui run build
+          pnpm --dir webui install --frozen-lockfile
+          pnpm --dir webui run build
       - uses: actions/upload-artifact@v7
         with:
           name: webui-dist
