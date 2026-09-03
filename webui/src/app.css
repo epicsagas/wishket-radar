@@ -112,6 +112,7 @@ a:hover { color: var(--brand-200); }
 
 /* ── 레이아웃 ───────────────────────────────────────────── */
 .layout { display: grid; grid-template-columns: 232px 1fr; min-height: 100vh; }
+body { overflow-x: hidden; }
 
 nav {
   background: var(--nav-bg);
@@ -195,7 +196,7 @@ nav .theme-toggle:focus-visible {
 }
 nav .theme-toggle svg { width: 15px; height: 15px; display: block; }
 
-main { padding: 1.75rem 2rem 3rem; max-width: 1180px; }
+main { padding: 1.75rem 2rem 3rem; max-width: 1180px; min-width: 0; }
 
 .page-head {
   display: flex;

@@ -175,6 +175,9 @@
 <style>
   /* 모바일: 6열 표를 가로 스크롤로. 데스크탑은 여유 있어 스크롤 없음 */
   .tscroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  @media (max-width: 760px) {
+    .tscroll :global(th:first-child) { min-width: 11rem; }
+  }
   .notebtn {
     padding: 0 0.4rem;
     font-size: 0.68rem;
