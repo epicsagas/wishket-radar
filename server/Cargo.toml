@@ -1,7 +1,7 @@
 [package]
 repository = "https://github.com/epicsagas/wishket-radar"
 name = "wishket-mcp"
-version = "0.3.0"
+version = "0.3.1"
 edition = "2021"
 description = "Wishket project search/analysis MCP server"
 
