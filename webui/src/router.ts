@@ -10,7 +10,7 @@ function currentRoute(): string {
 }
 
 /// 경로를 세그먼트로. 쿼리는 떼어낸다.
-/// "/pipeline/158092" → ["pipeline", "158092"]
+/// "/pipeline/123" → ["pipeline", "123"]
 /// "/proposals?file=a.md" → ["proposals"]
 export function segments(r: string): string[] {
   return r.split('?')[0].split('/').filter(Boolean)

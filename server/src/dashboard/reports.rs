@@ -160,16 +160,16 @@ mod tests {
 
 ## 분석 대상 (적합도 순)
 
-### 1. [A] 게임 로열티 정산·보고서 자동화 시스템 구축
-- URL: https://www.wishket.com/project/158052/ · 1,500만~2,000만원 · 90일
+### 1. [A] 정산·보고서 자동화 시스템 구축
+- URL: https://www.wishket.com/project/700001/ · 1,500만~2,000만원 · 90일
 - 키워드 매칭: 48점 (matched: 결제/핀테크, AI/LLM/RAG)
 - AI 평가: 85점 · 모델: claude-opus-5
 - 적합도 판단: 정산·환율 과업이 결제 도메인 경험과 직결.
 - 주의점: 마감 2026-09-07 (5일) — 즉시 제안 시작 필요.
 - 제안 방향: 로우 데이터 처리 방안을 최중요로 구체 제시.
 
-### 2. [B] 영림원 ERP DB 연동
-- URL: https://www.wishket.com/project/157885/ · 800만원 · 40일
+### 2. [B] ERP DB 연동 과제
+- URL: https://www.wishket.com/project/700002/ · 800만원 · 40일
 - 적합도 판단: 백엔드/DB 부분 겹침.
 - 주의점: ⚠️ 마감 2026-09-04 (2일 남음). 지원자 104명.
 - 제안 방향: APScheduler vs Celery 선택 기준 제시.
@@ -178,7 +178,7 @@ mod tests {
 
 | 제목 | 스코어 |
 |---|---|
-| 소개팅앱 마켓 등록 | 13 |
+| 모바일앱 마켓 등록 | 13 |
 ";
 
     #[test]
@@ -186,9 +186,9 @@ mod tests {
         let m = parse(REPORT, "2026-09-02-1117.md");
         assert_eq!(m.len(), 2, "분석 대상 2건만 (표는 제외): {m:?}");
 
-        let a = m.get("158052").expect("158052");
+        let a = m.get("700001").expect("700001");
         assert_eq!(a.grade.as_deref(), Some("A"));
-        assert!(a.title.as_deref().unwrap().contains("게임 로열티"));
+        assert!(a.title.as_deref().unwrap().contains("정산·보고서"));
         assert!(a.fit.as_deref().unwrap().contains("결제 도메인"));
         assert!(a.caution.as_deref().unwrap().contains("2026-09-07"));
         assert!(a.proposal.as_deref().unwrap().contains("로우 데이터"));
@@ -197,7 +197,7 @@ mod tests {
         assert_eq!(a.model.as_deref(), Some("claude-opus-5"));
 
         // AI 평가 라인 없는 구형 리포트 항목 — 점수·모델 없이 파싱
-        let old = m.get("157885").unwrap();
+        let old = m.get("700002").unwrap();
         assert_eq!(old.grade.as_deref(), Some("B"));
         assert_eq!(old.score, None);
         assert_eq!(old.model, None);
@@ -208,7 +208,7 @@ mod tests {
         let m = parse(REPORT, "r.md");
         assert!(!m
             .values()
-            .any(|a| a.title.as_deref().unwrap_or("").contains("소개팅앱")));
+            .any(|a| a.title.as_deref().unwrap_or("").contains("모바일앱")));
     }
 
     #[test]

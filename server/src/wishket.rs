@@ -727,7 +727,7 @@ mod tests {
     <div class="project-info-box"><div class="project-info-box-wrapper">
     <section class="project-organic-info">
       <div class="project-status-label recruiting-status mb12"><div class="status-mark recruiting-mark">모집 중</div></div>
-      <a class="subtitle-2-medium project-link" href="/project/157463/"><p class="subtitle-1-half-medium mb10">Databricks 기반 데이터 플랫폼 구축 데이터 엔지니어</p></a>
+      <a class="subtitle-2-medium project-link" href="/project/800001/"><p class="subtitle-1-half-medium mb10">데이터 플랫폼 구축 데이터 엔지니어</p></a>
       <div class="project-core-info mb10">
         <p class="budget body-1 text700">월 금액 <span class="body-1-medium">7,000,000원 <span class="body-2-medium">/월</span></span></p>
         <span class="info-divider"></span>
@@ -769,12 +769,9 @@ mod tests {
         let cards = parse_cards(CARD_HTML);
         assert_eq!(cards.len(), 1);
         let c = &cards[0];
-        assert_eq!(c.id, "157463");
-        assert_eq!(
-            c.title,
-            "Databricks 기반 데이터 플랫폼 구축 데이터 엔지니어"
-        );
-        assert_eq!(c.url, "https://www.wishket.com/project/157463/");
+        assert_eq!(c.id, "800001");
+        assert_eq!(c.title, "데이터 플랫폼 구축 데이터 엔지니어");
+        assert_eq!(c.url, "https://www.wishket.com/project/800001/");
         assert_eq!(c.status.as_deref(), Some("모집 중"));
         assert_eq!(c.budget.as_deref(), Some("월 금액 7,000,000원 /월"));
         assert_eq!(c.duration.as_deref(), Some("예상 기간 300일"));
@@ -795,7 +792,7 @@ mod tests {
         assert_eq!(c.private_matching, Some(false));
     }
 
-    /// 실제 부스트 파트너 전용(프라이빗 매칭) 카드 마크업 (project/158092).
+    /// 비공개(프라이빗 매칭) 카드 실측 마크업 구조.
     #[test]
     fn parses_private_matching_badge() {
         let html = r#"
@@ -812,7 +809,7 @@ mod tests {
             <div class="status-mark recruiting-mark">모집 중</div>
             <div class="status-mark new-mark">NEW</div>
           </div>
-          <a class="subtitle-2-medium project-link" href="/project/158092/"><p class="subtitle-1-half-medium mb10">Flutter 기반 프라이빗 프로젝트</p></a>
+          <a class="subtitle-2-medium project-link" href="/project/800002/"><p class="subtitle-1-half-medium mb10">Flutter 기반 프라이빗 프로젝트</p></a>
         </section>
         </div></div>"#;
         let cards = parse_cards(html);
@@ -826,13 +823,13 @@ mod tests {
     fn detail_without_job_posting_still_gets_title() {
         // 마감된 공고는 JobPosting JSON-LD를 안 내려준다 — 제목이 비면 안 된다.
         let html = r#"<html><head>
-            <title>AI 기반 문서 영상 자동생성 개발 · 위시켓(Wishket) - 프로젝트</title>
+            <title>AI 기반 문서 자동화 개발 · 위시켓(Wishket) - 프로젝트</title>
             <script type="application/ld+json">{"@type":"BreadcrumbList"}</script>
             </head><body>
             <div class="project-detail-condition-row"><div>모집 마감일</div><div>2026년 09월 02일</div></div>
             </body></html>"#;
         let d = parse_detail("158089", html);
-        assert_eq!(d.card.title, "AI 기반 문서 영상 자동생성 개발");
+        assert_eq!(d.card.title, "AI 기반 문서 자동화 개발");
         assert_eq!(d.conditions.len(), 1);
     }
 
@@ -872,7 +869,7 @@ mod tests {
     fn private_badge_in_similar_section_is_ignored() {
         // "모집 중인 다른 프로젝트" 추천 카드의 프라이빗 배지는 현재 공고 것이 아니다
         let html = r#"<html><head>
-            <title>의료정보시스템 유지보수 · 위시켓(Wishket) - 프로젝트</title>
+            <title>레거시 시스템 유지보수 · 위시켓(Wishket) - 프로젝트</title>
             </head><body>
             <div class="project-detail-condition-row"><div>모집 마감일</div><div>2026년 09월 08일</div></div>
             <h2 class="project-similar-layer-title">모집 중인 다른 프로젝트</h2>
@@ -880,7 +877,7 @@ mod tests {
               <div class="project-status-label"><div class="status-mark private-mark">프라이빗 매칭</div></div>
             </div></div>
             </body></html>"#;
-        let d = parse_detail("158151", html);
+        let d = parse_detail("800003", html);
         assert_eq!(d.card.private_matching, Some(false));
     }
 
@@ -903,7 +900,7 @@ mod tests {
             <meta property="og:title" content="대한민국 대표 IT 프로젝트 플랫폼">
             <script type="application/ld+json">{"@type":"BreadcrumbList"}</script>
             </head><body></body></html>"#;
-        let d = parse_detail("158092", html);
+        let d = parse_detail("800002", html);
         assert!(d.card.title.trim().is_empty(), "{:?}", d.card.title);
     }
 
@@ -949,7 +946,7 @@ mod tests {
         assert_eq!(d.card.comments.as_deref(), Some("3"));
     }
 
-    /// 실제 프라이빗 프로젝트 상세 페이지(project/158092) 구조:
+    /// 비공개 프로젝트 상세 페이지 실측 구조:
     /// project-info-box 카드 DOM 없이 status-guide 안에 뱃지가 렌더링됨.
     #[test]
     fn parses_detail_private_matching_without_card_dom() {
@@ -969,7 +966,7 @@ mod tests {
         {"@context":"https://schema.org","@type":"JobPosting","title":"사내 시스템 재구축"}
         </script>
         </body></html>"#;
-        let d = parse_detail("158092", html);
+        let d = parse_detail("800002", html);
         assert_eq!(d.card.private_matching, Some(true));
         assert_eq!(d.card.title, "사내 시스템 재구축");
     }
