@@ -7,6 +7,7 @@
   import { dday, ddayLabel, ddayTone, gradeTone, statusTone } from '../lib/fmt'
 
   let view = $state<'table' | 'kanban'>('table')
+  let showClosed = $state(false)
   let expanded = $state<string | null>(null)
   let error = $state('')
   let busy = $state<string | null>(null)
@@ -14,6 +15,12 @@
   const apps = $derived($appState?.applications ?? [])
   const hasClosed = $derived(
     apps.some((a) => (CLOSED_STAGES as readonly string[]).includes(a.status)),
+  )
+  // 종결(완료·미체결·탈락·철회) 건은 기본 숨김 — 단계를 종결 상태로 바꾸면 바로 치워진다
+  const visible = $derived(
+    showClosed
+      ? apps
+      : apps.filter((a) => !(CLOSED_STAGES as readonly string[]).includes(a.status)),
   )
 
   async function patch(id: string, fields: Record<string, string>) {
@@ -44,7 +51,7 @@
 
 <div class="page-head">
   <h1>지원 파이프라인</h1>
-  <span class="sub">{apps.length}건 · 인박스 관심 + applications.yaml</span>
+  <span class="sub">{visible.length}건 · 인박스 관심 + applications.yaml</span>
 </div>
 
 {#if error}<div class="banner err">{error}</div>{/if}
@@ -52,6 +59,11 @@
 <div class="toolbar">
   <button class:ghost={view !== 'table'} onclick={() => (view = 'table')}>표</button>
   <button class:ghost={view !== 'kanban'} onclick={() => (view = 'kanban')}>칸반</button>
+  {#if hasClosed}
+    <button class:ghost={!showClosed} onclick={() => (showClosed = !showClosed)}>
+      {showClosed ? '종결 숨기기' : `종결 ${apps.length - visible.length}건`}
+    </button>
+  {/if}
 </div>
 
 {#if apps.length === 0}
@@ -59,6 +71,13 @@
     <div class="empty">
       <strong>지원 내역 없음</strong>
       <a href="#/inbox">인박스</a>에서 공고를 "관심"으로 표시하면 여기에 들어옵니다.
+    </div>
+  </div>
+{:else if visible.length === 0}
+  <div class="panel">
+    <div class="empty">
+      <strong>진행 중인 지원 없음</strong>
+      종결 {apps.length}건이 숨겨져 있습니다. 위 "종결" 버튼으로 볼 수 있습니다.
     </div>
   </div>
 {:else if view === 'table'}
@@ -76,7 +95,7 @@
         </tr>
       </thead>
       <tbody>
-        {#each apps as a (a.id)}
+        {#each visible as a (a.id)}
           {@const d = a.deadline ? dday($appState!.today, a.deadline) : null}
           <tr style:opacity={busy === a.id ? 0.5 : 1}>
             <td>
@@ -152,7 +171,7 @@
     {/each}
   </div>
 
-  {#if hasClosed}
+  {#if hasClosed && showClosed}
     <h2 style="margin-top: 1.6rem">종결</h2>
     <div class="kanban closed">
       {#each CLOSED_STAGES as s}
