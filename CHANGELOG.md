@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.3] - 2026-09-03
+
+### Fixed
+- 파이프라인 표 모바일 가로 스크롤이 표 내부가 아니라 페이지 전체를 밀던 문제 — grid item(`main`)에 `min-width: 0` 누락으로 nav까지 잘려 보이던 레이아웃 붕괴 수정.
+
 ## [0.2.2] - 2026-09-03
 
 ### Changed
