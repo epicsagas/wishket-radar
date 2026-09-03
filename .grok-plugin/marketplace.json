@@ -10,8 +10,9 @@
       "description": "위시켓 프로젝트 검색·분석·기술 매칭 에이전트 플러그인",
       "category": "productivity",
       "source": {
-        "type": "local",
-        "path": "."
+        "source": "url",
+        "url": "https://github.com/epicsagas/wishket-radar.git",
+        "sha": "d0429a32477031e4b8bcaf55dfdea80112d44ebb"
       },
       "homepage": "https://github.com/epicsagas/wishket-radar",
       "keywords": [
