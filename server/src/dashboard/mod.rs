@@ -1,6 +1,7 @@
 //! `wishket-mcp dashboard` — 로컬 webui. ~/.wishket-radar 상태 파일을 읽고(일부 편집) 서빙한다.
 //! 파일이 정규 소스고 UI는 파생 뷰다. 0.0.0.0 바인드 + 토큰 인증.
 
+pub mod ai;
 pub mod api;
 pub mod apps;
 pub mod fsutil;

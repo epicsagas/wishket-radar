@@ -15,8 +15,55 @@
   let profile = $state<ProfileData | null>(null)
   let raw = $state<string | null>(null)
   let hasComments = $state(false)
-  let tab = $state<'profile' | 'portfolio'>('profile')
+  let tab = $state<'profile' | 'portfolio' | 'ai'>('profile')
   let mode = $state<'form' | 'yaml'>('form')
+
+  // AI 설정 (BYOK) — 키는 마스킹으로만 표시되고, 빈 칸으로 저장하면 기존 키 유지
+  interface AiConf {
+    configured: boolean
+    provider?: string
+    base_url?: string | null
+    model?: string
+    temperature?: number | null
+    api_key_masked?: string
+  }
+  let ai = $state<AiConf | null>(null)
+  let aiKey = $state('')
+  let aiSaving = $state(false)
+  let aiSaved = $state(false)
+  let aiError = $state('')
+
+  function loadAi() {
+    api<AiConf>('/api/settings/ai')
+      .then((r) => (ai = r))
+      .catch((e) => (aiError = String(e)))
+  }
+  loadAi()
+
+  async function saveAi() {
+    if (!ai) return
+    aiSaving = true
+    aiError = ''
+    try {
+      ai = await api<AiConf>('/api/settings/ai', {
+        method: 'PUT',
+        body: JSON.stringify({
+          provider: ai.provider ?? 'anthropic',
+          base_url: ai.base_url || null,
+          model: ai.model ?? '',
+          temperature: ai.temperature ?? null,
+          api_key: aiKey,
+        }),
+      })
+      aiKey = ''
+      aiSaved = true
+      setTimeout(() => (aiSaved = false), 2500)
+    } catch (e) {
+      aiError = String(e)
+    } finally {
+      aiSaving = false
+    }
+  }
 
   // 포트폴리오 — 프로필과 같은 층위의 "나를 설명하는 자산"
   let folio = $state<FileEntry[]>([])
@@ -138,16 +185,63 @@
   <span class="sub">
     {tab === 'profile'
       ? 'profile.yaml · 저장 즉시 다음 스캔부터 반영'
-      : `포트폴리오 ${folio.length}건 · 제안서 첨부에 재사용`}
+      : tab === 'portfolio'
+        ? `포트폴리오 ${folio.length}건 · 제안서 첨부에 재사용`
+        : 'BYOK — 키는 이 서버에만 저장되고 응답으로 다시 보내지 않습니다'}
   </span>
 </div>
 
 <div class="toolbar">
   <button class:ghost={tab !== 'profile'} onclick={() => (tab = 'profile')}>매칭 프로필</button>
   <button class:ghost={tab !== 'portfolio'} onclick={() => (tab = 'portfolio')}>포트폴리오</button>
+  <button class:ghost={tab !== 'ai'} onclick={() => (tab = 'ai')}>AI 설정</button>
 </div>
 
-{#if tab === 'portfolio'}
+{#if tab === 'ai'}
+  <div class="panel sec">
+    <h2>AI 설정 <span class="dim">BYOK · 인박스 상세에서 "AI 평가"에 사용</span></h2>
+    {#if aiError}<div class="banner err">{aiError}</div>{/if}
+    {#if !ai}
+      <div class="empty">불러오는 중…</div>
+    {:else}
+      <div class="field">
+        <label for="ai-provider">공급자</label>
+        <select id="ai-provider" bind:value={ai.provider} onchange={() => (ai = { ...ai!, provider: ai!.provider ?? 'anthropic' })}>
+          <option value="anthropic">Anthropic</option>
+          <option value="openai">OpenAI</option>
+          <option value="compatible">호환 엔드포인트 (OpenAI 형식)</option>
+        </select>
+      </div>
+      {#if ai.provider === 'compatible'}
+        <div class="field">
+          <label for="ai-base">Base URL</label>
+          <input id="ai-base" type="text" bind:value={ai.base_url} placeholder="예: https://openrouter.ai/api/v1" />
+        </div>
+      {/if}
+      <div class="field">
+        <label for="ai-key">API 키</label>
+        <input
+          id="ai-key" type="password" bind:value={aiKey}
+          placeholder={ai.configured ? `저장됨 (${ai.api_key_masked}) — 바꾸려면 입력` : '키를 입력하세요'}
+          autocomplete="off"
+        />
+      </div>
+      <div class="field">
+        <label for="ai-model">모델</label>
+        <input id="ai-model" type="text" bind:value={ai.model} placeholder="예: claude-sonnet-5 / gpt-5" />
+      </div>
+      <div class="field">
+        <label for="ai-temp">온도</label>
+        <input id="ai-temp" type="number" step="0.1" min="0" max="2" bind:value={ai.temperature} placeholder="기본값" />
+      </div>
+      <div class="savebar">
+        <button onclick={saveAi} disabled={aiSaving}>
+          {aiSaving ? '저장 중…' : aiSaved ? '저장됨' : '저장'}
+        </button>
+      </div>
+    {/if}
+  </div>
+{:else if tab === 'portfolio'}
   {#if folioLoading}
     <div class="panel"><div class="empty">불러오는 중…</div></div>
   {:else if folio.length === 0}
