@@ -393,6 +393,12 @@ fn cli_output(arg: Option<&str>) -> Option<String> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // state.db·WAL·스냅샷에 평문 BYOK 키가 들어간다(v0.5) — 이후 생성되는
+    // 모든 파일을 기본 0600으로. 프로세스 전용 마스크라 다른 동작에 영향 없음.
+    #[cfg(unix)]
+    unsafe {
+        libc::umask(0o077);
+    }
     let mut args = std::env::args().skip(1);
     match args.next().as_deref() {
         Some("dashboard") => {
