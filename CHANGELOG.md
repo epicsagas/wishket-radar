@@ -18,6 +18,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 - API 키는 로컬 SQLite에만 저장(파일 0600 선례), 응답 JSON·로그에 평문 재노출 없음. 외부 전송은 사용자가 지정한 공급자 API 호출뿐.
+- **리포트 렌더 sanitize (ammonia)** — 공고 본문(3자 작성)이 모델 출력 경유로 리포트에 흐르면서 기존 "전부 본인 파일" 전제가 깨졌다. raw HTML·`javascript:` 링크·원격 `<img>`(비콘)를 제거한다.
+- **키 파일 권한 0600 고정** — 기동 시 `umask 0o077` + 연결마다 재적용 + 주간 스냅샷 chmod 후 rename. WAL 재생성·스냅샷으로 권한이 풀리는 경로 제거.
+- **공급자 리다이렉트 차단** — 기본 정책은 커스텀 인증 헤더(`x-api-key`)를 리다이렉트 대상 호스트로 그대로 전송한다. `Policy::none`으로 끊었다.
+
+### Fixed
+- 공급자 실패로 응답 없는 user 턴이 남으면 다음 요청이 `[user, user]` 배열로 400을 받는 문제 — 연속 same-role 병합과 history 40개 상한으로 방어.
+- 스키마 마이그레이션이 ALTER 실패를 무시하고 `user_version=2`를 찍어 conversations 쿼리가 영구히 깨질 수 있던 문제 — 컬럼 실존 확인 후에만 버전 기록.
 
 ## [0.4.0] - 2026-09-04
 
