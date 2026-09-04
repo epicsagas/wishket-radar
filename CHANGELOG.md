@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-09-04
+
+### Added
+- **SQLite 저장 계층 (WAL)** — `state.json` 단일 파일을 `state.db`(SQLite, WAL 모드)로 이전. 대시보드 3초 폴링과 쓰기가 겹쳐도 읽기가 막히지 않는다(`busy_timeout=5000`, `synchronous=NORMAL`). 스키마: `seen`·`applications`·`settings` + v0.5 대화용 `conversations`·`messages` 선반영(`user_version=1`).
+- **자동 이관** — 첫 기동 시 `state.json`·`applications.yaml`·`profile.yaml`을 흡수하고 원본을 `*.migrated`로 보존(matches.md 이관 선례 준용). 깨진 파일은 흡수하지 않고 원본 그대로 둔다. 롤백 경로: `*.migrated` 파일을 원래 이름으로 되돌리고 `state.db`를 삭제.
+- **주간 백업** — 최신 스냅샷이 7일 경과 시 `VACUUM INTO`로 `backups/state-YYYYMMDD.db` 생성, 4세대 유지. 실패해도 앱 동작에는 영향 없음.
+- **저장 계층 추상화** — `StateStore` trait(JSON/SQLite 백엔드) 도입. 대시보드는 `AppState`의 state_dir로 스코프를 한정(`load_in`/`save_in`)해 테스트가 임시 디렉터리에 닫힌다.
+- **프로필 해석 순서** — `$WISHKET_PROFILE`(명시 오버라이드) > SQLite(`settings.profile_yaml`) > 기존 파일 탐색 체인. 대시보드 프로필 편집은 DB에 기록. DB가 정규 소스면 `profile_external` 힌트는 노출하지 않는다.
+
+### Changed
+- `reset_cache`가 `state.db`(+WAL 잔재)를 삭제한다. 응답 스키마(`cleared`/`path`) 유지.
+- 모든 API(`/api/state` 등) 응답 스키마 불변 — webui 무수정.
+
 ## [0.3.3] - 2026-09-04
 
 ### Added
