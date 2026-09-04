@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-09-04
+
+### Added
+- 사이드바 브랜드 영역에 GitHub Star 링크 버튼 — 클릭 시 리포지토리를 새 탭으로 열고, 호버 시 별 아이콘 강조. 브랜드 제목은 클릭 시 인박스로 이동.
+
+### Changed
+- 사이드바 폭 232px→264px — Star 버튼 추가 후 좁은 폭에서 제목과 버튼이 겹치던 문제. 제목은 극단적으로 좁아질 때만 말줄임 처리.
+
 ## [0.3.2] - 2026-09-04
 
 ### Fixed
