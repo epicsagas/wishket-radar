@@ -42,8 +42,9 @@ CREATE TABLE IF NOT EXISTS messages (
     content TEXT NOT NULL,
     created_at TEXT NOT NULL
 );
-PRAGMA user_version = 1;
 ";
+// user_version은 ensure()의 생성 분기에서만 세팅한다 — open마다 쓰면 3초 폴마다
+// 불필요한 쓰기 잠금이 걸린다.
 
 pub fn db_path(dir: &Path) -> PathBuf {
     dir.join("state.db")
@@ -76,6 +77,8 @@ fn open_ready(dir: &Path) -> Result<Connection, io::Error> {
 }
 
 /// 첫 기동 1회: 디렉터리·스키마 생성, legacy 파일 흡수, 주간 스냅샷 점검.
+/// DB 생성은 이 함수에서만 한다 — open()이 임의로 만들면 빈 db가 present()로
+/// 보여 마이그레이션을 영구 우회한다.
 pub fn ensure(dir: &Path) -> Result<(), io::Error> {
     std::fs::create_dir_all(dir)?;
     if present(dir) {
@@ -83,10 +86,27 @@ pub fn ensure(dir: &Path) -> Result<(), io::Error> {
         return Ok(());
     }
     let conn = open(dir)?;
+    conn.execute_batch("PRAGMA user_version = 1;")
+        .map_err(io_err)?;
     migrate_legacy(&conn, dir)?;
+    restrict_perms(dir);
     weekly_snapshot(dir);
     Ok(())
 }
+
+/// db 파일을 토큰 파일 선례(dashboard/mod.rs)에 맞춰 0600으로. 실패는 무시.
+#[cfg(unix)]
+fn restrict_perms(dir: &Path) {
+    use std::os::unix::fs::PermissionsExt;
+    for name in ["state.db", "state.db-wal", "state.db-shm"] {
+        let p = dir.join(name);
+        if p.exists() {
+            let _ = std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o600));
+        }
+    }
+}
+#[cfg(not(unix))]
+fn restrict_perms(_dir: &Path) {}
 
 /// state.json / applications.yaml / profile.yaml을 흡수하고 원본을
 /// `*.migrated`로 rename한다. 깨진 파일은 흡수하지 않고 원본 그대로 둔다
@@ -106,22 +126,32 @@ fn migrate_legacy(conn: &Connection, dir: &Path) -> Result<(), io::Error> {
             let _ = std::fs::rename(&json_path, dir.join("state.json.migrated"));
         }
     }
-    // applications.yaml → applications (Value로 보관해 스키마 변경에 무관)
+    // applications.yaml → applications (Value로 보관해 스키마 변경에 무관).
+    // id가 숫자로 온 yaml도 문자열로 정규화하고, 그래도 Application으로
+    // 역직렬화가 안 되는 행이 있으면(타입 불량) 파일 채로 남겨 dashboard의
+    // parse_error 경로가 맡는다 — 조용한 행 유실을 막는다.
     let yaml_path = dir.join("applications.yaml");
     if let Ok(raw) = std::fs::read_to_string(&yaml_path) {
-        match serde_yaml::from_str::<AppsShim>(&raw) {
-            Ok(shim) if !shim.applications.is_empty() => {
-                for (i, a) in shim.applications.iter().enumerate() {
-                    let id = a["id"].as_str().unwrap_or("").to_string();
-                    conn.execute(
-                        "INSERT OR REPLACE INTO applications (idx, id, data) VALUES (?1, ?2, ?3)",
-                        rusqlite::params![i as i64, id, serde_json::to_string(a).unwrap()],
-                    )
-                    .map_err(io_err)?;
+        if let Ok(shim) = serde_yaml::from_str::<AppsShim>(&raw) {
+            let normalized: Vec<Value> = shim
+                .applications
+                .iter()
+                .map(|a| {
+                    let mut a = a.clone();
+                    a["id"] = Value::String(coerce_id(&a["id"]));
+                    a
+                })
+                .collect();
+            if !normalized.is_empty()
+                && normalized.iter().all(|a| {
+                    serde_json::from_value::<crate::dashboard::apps::Application>(a.clone()).is_ok()
+                })
+            {
+                for (i, a) in normalized.iter().enumerate() {
+                    upsert_application(conn, i, a)?;
                 }
                 let _ = std::fs::rename(&yaml_path, dir.join("applications.yaml.migrated"));
             }
-            _ => {}
         }
     }
     // profile.yaml → settings["profile_yaml"] (원문 그대로 — 파싱 실패해도 편집기에서 고친다)
@@ -139,6 +169,29 @@ fn migrate_legacy(conn: &Connection, dir: &Path) -> Result<(), io::Error> {
 struct AppsShim {
     #[serde(default)]
     applications: Vec<Value>,
+}
+
+/// yaml의 id는 따옴표 없는 숫자로도 온다(유효한 yaml) — 문자열로 강제한다.
+/// 비워두면 UNIQUE 충돌로 행이 조용히 사라진다.
+fn coerce_id(v: &Value) -> String {
+    match v {
+        Value::String(s) => s.clone(),
+        Value::Number(n) => n.to_string(),
+        _ => String::new(),
+    }
+}
+
+fn upsert_application(conn: &Connection, idx: usize, a: &Value) -> Result<(), io::Error> {
+    conn.execute(
+        "INSERT OR REPLACE INTO applications (idx, id, data) VALUES (?1, ?2, ?3)",
+        rusqlite::params![
+            idx as i64,
+            coerce_id(&a["id"]),
+            serde_json::to_string(a).unwrap()
+        ],
+    )
+    .map_err(io_err)?;
+    Ok(())
 }
 
 fn insert_seen(conn: &Connection, id: &str, e: &SeenEntry) -> Result<(), io::Error> {
@@ -189,6 +242,11 @@ pub fn load_state(dir: &Path) -> Result<State, io::Error> {
 pub fn save_state(dir: &Path, state: &State) -> Result<(), io::Error> {
     let mut conn = open_ready(dir)?;
     let tx = conn.transaction().map_err(io_err)?;
+    // ponytail: save는 전체 맵 치환(last-writer-wins) — 파일 시절과 동일
+    // 의미론. MCP 스캔 프로세스와 대시보드가 동시에 쓰면 나중 쓰기가 이기고,
+    // 사이에 추가된 타 프로세스의 새 항목은 유실된다. WAL이 막아주는 건 잠금
+    // 오류까지. 완전한 증분 저장은 호출부가 '이번에 건드린 id'를 알아야 하므로
+    // State에 dirty set이 필요 — 유실이 실제로 관측되면 그때 추가.
     tx.execute("DELETE FROM seen", []).map_err(io_err)?;
     for (id, e) in &state.seen {
         insert_seen(&tx, id, e)?;
@@ -218,21 +276,18 @@ pub fn load_applications(dir: &Path) -> Result<Vec<Value>, io::Error> {
 pub fn save_applications(dir: &Path, apps: &[Value]) -> Result<(), io::Error> {
     let mut conn = open_ready(dir)?;
     let tx = conn.transaction().map_err(io_err)?;
+    // save_state와 동일한 전체 치환 의미론 (ponytail 주석 참고).
     tx.execute("DELETE FROM applications", []).map_err(io_err)?;
     for (i, a) in apps.iter().enumerate() {
-        let id = a["id"].as_str().unwrap_or("").to_string();
-        tx.execute(
-            "INSERT INTO applications (idx, id, data) VALUES (?1, ?2, ?3)",
-            rusqlite::params![i as i64, id, serde_json::to_string(a).unwrap()],
-        )
-        .map_err(io_err)?;
+        upsert_application(&tx, i, a)?;
     }
     tx.commit().map_err(io_err)
 }
 
 /// DB의 profile.yaml 원문. 없어도 state_dir에 파일이 남아 있으면(미이관·깨짐) 그걸로 폴백.
+/// open_ready — open()으로 db를 임의 생성하면 ensure의 마이그레이션을 영구 우회한다.
 pub fn load_profile_yaml(dir: &Path) -> Option<String> {
-    let conn = open(dir).ok()?;
+    let conn = open_ready(dir).ok()?;
     let stored = get_setting(&conn, "profile_yaml");
     if stored.is_some() {
         return stored;
@@ -247,7 +302,7 @@ pub fn save_profile_yaml(dir: &Path, yaml: &str) -> Result<(), io::Error> {
 
 /// 프로필의 정규 소스가 DB인지. API의 profile_external 힌트 계산에 쓴다.
 pub fn profile_db_backed(dir: &Path) -> bool {
-    open(dir)
+    open_ready(dir)
         .ok()
         .and_then(|c| get_setting(&c, "profile_yaml"))
         .is_some()
@@ -282,10 +337,20 @@ fn weekly_snapshot(dir: &Path) {
     };
     if needs && !target.exists() {
         if let Ok(conn) = open(dir) {
-            let _ = conn.execute(
-                "VACUUM INTO ?1",
-                rusqlite::params![target.display().to_string()],
-            );
+            // 임시 이름에 VACUUM INTO 후 rename — 실패해 부분 파일이
+            // "오늘 스냅샷"으로 기록되는 걸 막는다.
+            let tmp = target.with_extension("db.tmp");
+            if conn
+                .execute(
+                    "VACUUM INTO ?1",
+                    rusqlite::params![tmp.display().to_string()],
+                )
+                .is_ok()
+            {
+                let _ = std::fs::rename(&tmp, &target);
+            } else {
+                let _ = std::fs::remove_file(&tmp);
+            }
         }
     }
     // 4세대 초과분 삭제 (이름에 날짜가 있어 정렬 = 시간순). 오늘 스냅샷이
@@ -307,13 +372,15 @@ fn weekly_snapshot(dir: &Path) {
     }
 }
 
-/// reset_cache — DB와 WAL 잔재를 지운다. 다음 스캔이 다시 베이스라인.
-pub fn reset(dir: &Path) {
-    for suffix in ["", "-wal", "-shm"] {
-        let mut name = db_path(dir).into_os_string();
-        name.push(suffix);
-        let _ = std::fs::remove_file(std::path::PathBuf::from(name));
-    }
+/// reset_cache — seen 캐시만 지운다(구 state.json 삭제와 동일 의미론).
+/// applications·profile_yaml는 파이프라인·프로필 데이터라 건드리지 않는다.
+/// 성공 여부를 돌려준다 — 실패를 "지워짐"으로 보고하지 않는다.
+pub fn reset(dir: &Path) -> Result<(), io::Error> {
+    let conn = open_ready(dir)?;
+    conn.execute("DELETE FROM seen", []).map_err(io_err)?;
+    conn.execute("DELETE FROM settings WHERE key = 'last_scan'", [])
+        .map_err(io_err)?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -336,12 +403,22 @@ mod tests {
             triaged_at: triage.map(|_| "2026-09-02".into()),
             url: Some("https://www.wishket.com/project/1/".into()),
             score: Some(42),
+            budget: Some("월 500만".into()),
+            duration: Some("예상 기간 90일".into()),
             budget_monthly_won: Some(5_000_000),
             budget_total_won: Some((1_000, 2_000)),
             duration_days: Some(90),
             daily_won: Some((10, 20)),
+            deadline: Some("2026-09-08".into()),
+            skills: vec!["rust".into()],
+            private_matching: Some(false),
+            description: Some("<p>본문</p>".into()),
             conditions: vec![("모집 마감일".into(), "2026-09-08".into())],
-            ..Default::default()
+            role: Some("백엔드".into()),
+            level: Some("시니어".into()),
+            location: Some("서울".into()),
+            matched: vec!["rust".into()],
+            detail_fetched_at: Some("2026-09-02T09:00:00+09:00".into()),
         }
     }
 
@@ -452,6 +529,64 @@ mod tests {
     }
 
     #[test]
+    fn legacy_numeric_application_id_is_coerced() {
+        // yaml에서 id를 따옴표 없이 쓴 파일 — 문자열로 강제하지 않으면
+        // UNIQUE 충돌로 행이 조용히 사라진다.
+        let dir = tmpdir("numid");
+        std::fs::write(
+            dir.join("applications.yaml"),
+            "applications:\n  - id: 12345\n    status: 미팅\n",
+        )
+        .unwrap();
+        let apps = load_applications(&dir).unwrap();
+        assert_eq!(apps.len(), 1, "숫자 id도 이관된다");
+        assert_eq!(apps[0]["id"], "12345");
+        assert!(dir.join("applications.yaml.migrated").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn bad_typed_application_row_blocks_migration() {
+        // quote_manwon이 문자열인 등 Application으로 역직렬화 불가한 행이면
+        // 파일 채로 남긴다(조용한 유실 금지) — parse_error는 yaml 경로가 보고.
+        let dir = tmpdir("badrow");
+        std::fs::write(
+            dir.join("applications.yaml"),
+            "applications:\n  - id: \"1\"\n    quote_manwon: 많이\n",
+        )
+        .unwrap();
+        let apps = load_applications(&dir).unwrap();
+        assert!(apps.is_empty(), "흡수 안 함");
+        assert!(dir.join("applications.yaml").exists(), "원본 보존");
+        assert!(!dir.join("applications.yaml.migrated").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn reset_clears_seen_only_keeps_pipeline_and_profile() {
+        // 구 state.json 삭제와 동일 의미론 — 파이프라인·프로필은 유지된다.
+        let dir = tmpdir("reset2");
+        let mut st = State::default();
+        st.seen.insert("1".into(), entry(None));
+        st.last_scan = Some("2026-09-04T00:00:00+09:00".into());
+        save_state(&dir, &st).unwrap();
+        save_applications(&dir, &[serde_json::json!({"id": "1", "status": "미팅"})]).unwrap();
+        save_profile_yaml(&dir, "name: 유지\nskills: []\n").unwrap();
+
+        reset(&dir).unwrap();
+        let back = load_state(&dir).unwrap();
+        assert!(back.seen.is_empty(), "seen은 지워진다");
+        assert!(back.last_scan.is_none(), "last_scan도 지워진다");
+        assert_eq!(load_applications(&dir).unwrap().len(), 1, "파이프라인 유지");
+        assert_eq!(
+            load_profile_yaml(&dir).as_deref(),
+            Some("name: 유지\nskills: []\n"),
+            "프로필 유지"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn weekly_snapshot_creates_and_caps_generations() {
         let dir = tmpdir("snap");
         ensure(&dir).unwrap();
@@ -474,13 +609,41 @@ mod tests {
     }
 
     #[test]
+    fn stale_snapshots_trigger_fresh_one() {
+        // 최신 스냅샷이 7일 넘었으면 오늘자 새 스냅샷을 만든다 (verifier 갭 보강).
+        let dir = tmpdir("snapstale");
+        ensure(&dir).unwrap();
+        let b = dir.join("backups");
+        let old = b.join("state-20260801.db");
+        std::fs::write(&old, "x").unwrap();
+        let week_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(8 * 86400);
+        old.metadata().unwrap().modified().unwrap();
+        // set_modified는 std 1.75+의 안정 API (파일 생성 후 mtime 되돌리기)
+        let f = std::fs::File::options().write(true).open(&old).unwrap();
+        f.set_modified(week_ago).unwrap();
+        drop(f);
+        // 오늘자 스냅샷이 없어야 stale 판정이 된다 — 지운다
+        let today = crate::state::now_iso()
+            .get(..10)
+            .unwrap_or("")
+            .replace('-', "");
+        let _ = std::fs::remove_file(b.join(format!("state-{today}.db")));
+        weekly_snapshot(&dir);
+        assert!(
+            b.join(format!("state-{today}.db")).exists(),
+            "7일 경과 시 재스냅샷"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn reset_removes_db_and_wal() {
         let dir = tmpdir("reset");
         save_state(&dir, &State::default()).unwrap();
         assert!(present(&dir));
-        reset(&dir);
-        assert!(!present(&dir));
-        assert!(!dir.join("state.db-wal").exists());
+        reset(&dir).unwrap();
+        assert!(present(&dir), "reset은 db 파일을 유지한다 (seen만 지움)");
+        assert!(load_state(&dir).unwrap().seen.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

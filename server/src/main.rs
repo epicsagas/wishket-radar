@@ -328,11 +328,11 @@ impl Wishket {
 
     #[tool(description = "seen 캐시 초기화 — 다음 스캔이 다시 베이스라인이 됨.")]
     async fn reset_cache(&self) -> Result<CallToolResult, McpError> {
-        let path = sqlite::db_path(&state::state_dir());
-        sqlite::reset(&state::state_dir());
+        let dir = state::state_dir();
+        let cleared = sqlite::reset(&dir).is_ok();
         Ok(json_result(json!({
-            "cleared": true,
-            "path": path.display().to_string(),
+            "cleared": cleared,
+            "path": sqlite::db_path(&dir).display().to_string(),
         })))
     }
 }
