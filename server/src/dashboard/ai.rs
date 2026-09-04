@@ -218,12 +218,15 @@ struct Completion {
 }
 
 /// AI 전용 클라이언트 — connect 타임아웃은 클라이언트 레벨 옵션이라
-/// 대시보드 위시켓 http 클라이언트와 분리한다.
+/// 대시보드 위시켓 http 클라이언트와 분리한다. 리다이렉트는 끈다 — 기본
+/// 정책은 x-api-key 커스텀 헤더를 리다이렉트 대상 호스트로 그대로 실어
+/// 보낸다(키 유출 경로).
 fn ai_client() -> &'static reqwest::Client {
     static C: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
     C.get_or_init(|| {
         reqwest::Client::builder()
             .connect_timeout(CONNECT_TIMEOUT)
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .unwrap_or_default()
     })

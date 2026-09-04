@@ -31,11 +31,14 @@ fn today() -> String {
 }
 
 fn render_markdown(src: &str) -> String {
-    // ponytail: sanitize 없음 — 내용은 전부 본인 state-dir 파일. 비신뢰 편집 생기면 ammonia 추가.
+    // v0.5부터 비신뢰 내용이 흐른다 — 공고 본문(3자 작성)이 모델 출력 경유로
+    // 리포트에 들어온다. 예전 "전부 본인 파일" 전제는 깨졌고, 예정대로
+    // ammonia를 붙인다. raw HTML·onerror·javascript: 링크는 제거된다.
     let mut opts = Options::empty();
     opts.insert(Options::ENABLE_TABLES);
     let mut out = String::new();
     html::push_html(&mut out, Parser::new_ext(src, opts));
+    let out = ammonia::clean(&out);
     // 렌더된 본문의 외부 링크는 전부 새 탭으로. 대시보드가 SPA라 같은 탭
     // 이동은 상태를 날린다.
     out.replace(
@@ -816,6 +819,26 @@ mod tests {
         // 내부 앵커까지 새 탭으로 열면 안 된다
         let html = render_markdown("[섹션](#anchor)");
         assert!(!html.contains("target="), "{html}");
+    }
+
+    #[test]
+    fn untrusted_html_is_sanitized() {
+        // v0.5: 공고 본문이 모델 출력 경유로 리포트에 들어온다 — 3자가
+        // 심은 스크립트가 리포트 뷰에서 실행되면 토큰 탈취로 이어진다.
+        let html = render_markdown("주의: <img src=x onerror=alert(1)> 마감 임박");
+        assert!(!html.contains("onerror"), "{html}");
+        assert!(
+            !html.contains("<img src=\"javascript:") && !html.contains("alert"),
+            "{html}"
+        );
+        let html = render_markdown("[눌러봐](javascript:fetch('/x'))");
+        assert!(!html.to_lowercase().contains("javascript:"), "{html}");
+        let html = render_markdown("<script>steal()</script>본문");
+        assert!(!html.contains("<script"), "{html}");
+        // 정상 표는 산다 — 기존 리포트 렌더 회귀 방지
+        let table = "| 등급 | 근거 |\n|---|---|\n| A | 일치 |";
+        let html = render_markdown(table);
+        assert!(html.contains("<table>") && html.contains("일치"), "{html}");
     }
 
     #[test]
