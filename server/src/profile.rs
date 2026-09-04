@@ -54,12 +54,20 @@ fn expand_tilde(p: &std::path::Path) -> PathBuf {
     p.to_path_buf()
 }
 
+/// 명시 오버라이드($WISHKET_PROFILE) — 존재할 때만. DB보다 우선한다.
+fn explicit_override() -> Option<PathBuf> {
+    std::env::var_os("WISHKET_PROFILE").map(|p| expand_tilde(&PathBuf::from(p)))
+}
+
 pub fn profile_path() -> Option<PathBuf> {
-    if let Some(p) = std::env::var_os("WISHKET_PROFILE") {
-        let p = expand_tilde(&PathBuf::from(p));
+    if let Some(p) = explicit_override() {
         if p.is_file() {
             return Some(p);
         }
+    }
+    // DB가 정규 소스면 외부 파일 힌트는 없다 (API profile_external 계산에 사용).
+    if crate::state::profile_db_backed(&crate::state::state_dir()) {
+        return None;
     }
     {
         let home = crate::state::home_dir();
@@ -95,7 +103,19 @@ pub fn profile_path() -> Option<PathBuf> {
     })
 }
 
+/// Resolution: $WISHKET_PROFILE > SQLite(settings.profile_yaml) > 파일 탐색 체인.
+/// DB 원문은 load_profile_yaml이 state_dir 파일로도 폴백하므로 미이관 배포도 그대로 읽힌다.
 pub fn load() -> Result<Profile, String> {
+    if let Some(p) = explicit_override() {
+        if p.is_file() {
+            let raw =
+                std::fs::read_to_string(&p).map_err(|e| format!("read {}: {e}", p.display()))?;
+            return serde_yaml::from_str(&raw).map_err(|e| format!("parse {}: {e}", p.display()));
+        }
+    }
+    if let Some(yaml) = crate::state::load_profile_yaml(&crate::state::state_dir()) {
+        return serde_yaml::from_str(&yaml).map_err(|e| format!("parse profile: {e}"));
+    }
     let Some(path) = profile_path() else {
         return Err("profile.yaml not found (set WISHKET_PROFILE)".into());
     };
@@ -256,6 +276,44 @@ notes: |
                 .unwrap()
                 > 0
         );
+    }
+
+    #[test]
+    fn db_profile_beats_file_chain_but_env_wins() {
+        let _guard = crate::state::env_lock();
+        let dir = std::env::temp_dir().join(format!("wk-prof-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::env::set_var("WISHKET_STATE_DIR", &dir);
+        // 파일 체인용 프로필 (state_dir 밖 위치 흉내: ~/.wishket 대신 직접 지정이 어려워
+        // DB 우선순위만 검증한다 — 파일은 state_dir에 심는다)
+        std::fs::write(
+            dir.join("profile.yaml"),
+            "name: 파일\nskills:\n  - name: Go\n",
+        )
+        .unwrap();
+
+        // DB에 없으면 파일이 읽힌다
+        let p = load().unwrap();
+        assert_eq!(p.name.as_deref(), Some("파일"));
+
+        // DB에 저장하면 DB가 이긴다 (파일보다 새로움)
+        crate::state::save_profile_yaml(&dir, "name: 디비\nskills:\n  - name: Rust\n").unwrap();
+        let p = load().unwrap();
+        assert_eq!(p.name.as_deref(), Some("디비"));
+        assert!(profile_path().is_none(), "DB 정규 소스 — 외부 힌트 없음");
+
+        // 명시 오버라이드는 DB도 이긴다
+        let over = dir.join("override.yaml");
+        std::fs::write(&over, "name: 오버라이드\nskills:\n  - name: Go\n").unwrap();
+        std::env::set_var("WISHKET_PROFILE", &over);
+        let p = load().unwrap();
+        assert_eq!(p.name.as_deref(), Some("오버라이드"));
+        assert_eq!(profile_path().as_deref(), Some(over.as_path()));
+        std::env::remove_var("WISHKET_PROFILE");
+
+        std::env::remove_var("WISHKET_STATE_DIR");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

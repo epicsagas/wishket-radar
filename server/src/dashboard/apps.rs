@@ -108,6 +108,24 @@ pub struct Loaded {
 }
 
 pub fn load(dir: &Path) -> Loaded {
+    // SQLite 백엔드 (v0.4). DB가 비었는데 applications.yaml이 남아 있으면
+    // (sqlite.rs가 깨진 파일은 못 흡수한다) yaml을 그대로 읽어 parse_error를 유지한다.
+    if crate::sqlite::present(dir) {
+        match crate::sqlite::load_applications(dir) {
+            Ok(vals) if !vals.is_empty() => {
+                let applications: Vec<Application> = vals
+                    .into_iter()
+                    .filter_map(|v| serde_json::from_value(v).ok())
+                    .collect();
+                return Loaded {
+                    file: ApplicationsFile { applications },
+                    parse_error: None,
+                };
+            }
+            Ok(_) => {}
+            Err(_) => {}
+        }
+    }
     let path = dir.join("applications.yaml");
     let Ok(raw) = std::fs::read_to_string(path) else {
         return Loaded {
@@ -135,6 +153,14 @@ pub fn load(dir: &Path) -> Loaded {
 }
 
 pub fn save(dir: &Path, file: &ApplicationsFile) -> std::io::Result<()> {
+    if crate::sqlite::present(dir) {
+        let vals: Vec<serde_json::Value> = file
+            .applications
+            .iter()
+            .map(|a| serde_json::to_value(a).expect("applications serialize"))
+            .collect();
+        return crate::sqlite::save_applications(dir, &vals);
+    }
     let body = serde_yaml::to_string(file).expect("applications serialize");
     fsutil::atomic_write(&dir.join("applications.yaml"), body.as_bytes())
 }

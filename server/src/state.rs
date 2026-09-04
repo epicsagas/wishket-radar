@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 use std::ffi::OsStr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -15,7 +15,7 @@ const PRUNE_DAYS: u64 = 90;
 ///
 /// 기존 필드(first_seen/title)만 있는 구 state.json도 그대로 읽힌다
 /// — 추가분은 전부 `#[serde(default)]`.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
 pub struct SeenEntry {
     pub first_seen: String,
     pub title: String,
@@ -138,24 +138,84 @@ pub fn state_dir() -> PathBuf {
         })
 }
 
-pub fn state_path() -> PathBuf {
-    state_dir().join("state.json")
+/// 저장 계층 교체 지점 (v0.4). 호출부는 load_in/save_in만 본다.
+pub trait StateStore {
+    fn load(&self) -> State;
+    fn save(&self, state: &State) -> std::io::Result<()>;
+}
+
+/// 구 JSON 파일 백엔드. 이관 원본(state.db 삭제 시 롤백 경로)으로 남는다.
+pub struct JsonStore(pub PathBuf);
+
+impl StateStore for JsonStore {
+    fn load(&self) -> State {
+        let Ok(raw) = std::fs::read_to_string(self.0.join("state.json")) else {
+            return State::default();
+        };
+        serde_json::from_str(&raw).unwrap_or_default()
+    }
+
+    /// Atomic save: write to a tmp sibling then rename over the target.
+    fn save(&self, state: &State) -> std::io::Result<()> {
+        let path = self.0.join("state.json");
+        std::fs::create_dir_all(path.parent().unwrap_or(&path))?;
+        let tmp = path.with_extension("json.tmp");
+        std::fs::write(&tmp, serde_json::to_string_pretty(state).unwrap())?;
+        std::fs::rename(tmp, path)
+    }
+}
+
+/// SQLite 백엔드 (state.db). 첫 접근에 legacy 파일을 흡수한다.
+pub struct SqliteStore(pub PathBuf);
+
+impl StateStore for SqliteStore {
+    fn load(&self) -> State {
+        crate::sqlite::load_state(&self.0).unwrap_or_default()
+    }
+    fn save(&self, state: &State) -> std::io::Result<()> {
+        crate::sqlite::save_state(&self.0, state)
+    }
+}
+
+/// 주어진 state_dir의 정규 백엔드. SQLite가 기본 — ensure 실패(디스크 오류 등)면
+/// JSON 파일로 폴백해 최소 동작은 유지한다.
+pub fn store_in(dir: &Path) -> Box<dyn StateStore> {
+    if crate::sqlite::present(dir) || crate::sqlite::ensure(dir).is_ok() {
+        Box::new(SqliteStore(dir.to_path_buf()))
+    } else {
+        Box::new(JsonStore(dir.to_path_buf()))
+    }
+}
+
+/// 대시보드는 AppState가 든 state_dir로 스코프를 한정해 테스트를 닫는다.
+pub fn load_in(dir: &std::path::Path) -> State {
+    store_in(dir).load()
+}
+
+pub fn save_in(dir: &std::path::Path, state: &State) -> std::io::Result<()> {
+    store_in(dir).save(state)
 }
 
 pub fn load() -> State {
-    let Ok(raw) = std::fs::read_to_string(state_path()) else {
-        return State::default();
-    };
-    serde_json::from_str(&raw).unwrap_or_default()
+    load_in(&state_dir())
 }
 
-/// Atomic save: write to a tmp sibling then rename over the target.
 pub fn save(state: &State) -> std::io::Result<()> {
-    let path = state_path();
-    std::fs::create_dir_all(path.parent().unwrap_or(&path))?;
-    let tmp = path.with_extension("json.tmp");
-    std::fs::write(&tmp, serde_json::to_string_pretty(state).unwrap())?;
-    std::fs::rename(tmp, path)
+    save_in(&state_dir(), state)
+}
+
+/// DB의 profile.yaml 원문 (미이관이면 state_dir 파일 폴백 — sqlite.rs 참고).
+pub fn load_profile_yaml(dir: &std::path::Path) -> Option<String> {
+    crate::sqlite::load_profile_yaml(dir)
+}
+
+pub fn save_profile_yaml(dir: &std::path::Path, yaml: &str) -> std::io::Result<()> {
+    crate::sqlite::save_profile_yaml(dir, yaml)
+}
+
+/// 프로필 정규 소스가 DB인지 (API의 profile_external 힌트 계산용).
+pub fn profile_db_backed(dir: &std::path::Path) -> bool {
+    crate::sqlite::profile_db_backed(dir)
 }
 
 /// unix epoch seconds → ISO-8601 local-time-ish (KST fixed +09:00).
@@ -229,6 +289,13 @@ fn parse_iso_epoch(s: &str) -> Option<u64> {
     let days = era * 146097 + doe - 719468;
     let secs = days * 86400 + h * 3600 + mi * 60 + sec - 9 * 3600;
     Some(secs.max(0) as u64)
+}
+
+#[cfg(test)]
+/// env var을 만지는 테스트끼리의 경합 방지용. 같은 프로세스에서 병렬로 돌기 전에 잠근다.
+pub(crate) fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 #[cfg(test)]

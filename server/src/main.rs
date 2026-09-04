@@ -4,6 +4,7 @@
 
 mod dashboard;
 mod profile;
+mod sqlite;
 mod state;
 mod wishket;
 
@@ -327,10 +328,10 @@ impl Wishket {
 
     #[tool(description = "seen 캐시 초기화 — 다음 스캔이 다시 베이스라인이 됨.")]
     async fn reset_cache(&self) -> Result<CallToolResult, McpError> {
-        let path = state::state_path();
-        let cleared = std::fs::remove_file(&path).is_ok();
+        let path = sqlite::db_path(&state::state_dir());
+        sqlite::reset(&state::state_dir());
         Ok(json_result(json!({
-            "cleared": cleared,
+            "cleared": true,
             "path": path.display().to_string(),
         })))
     }
