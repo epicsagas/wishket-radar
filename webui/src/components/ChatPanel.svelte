@@ -30,14 +30,20 @@
   let tokens = $state<{ in: number; out: number } | null>(null)
   let activeId = $state<number | null>(null)
   let streamEl: HTMLElement | null = $state(null)
+  let loadedFor: number | null | undefined = undefined // undefined = 아직 안 읽음
+  let aborter: AbortController | null = null
 
-  const loadedId = $derived(conversationId ?? null)
+  // 언마운트(모달 닫기·경로 이동) 시 진행 중 스트림을 끊는다 —
+  // 서버 relay가 부분 텍스트를 영속하므로 재진입하면 이어서 보인다
+  $effect(() => () => aborter?.abort())
 
-  // conversationId가 바뀌면 대화를 읽는다 — 스트리밍 중엔 덮어쓰지 않는다
+  // conversationId가 바뀌면 대화를 읽는다 — 스트리밍 중엔 덮어쓰지 않는다.
+  // activeId가 아닌 loadedFor로 중복을 막는다(새 대화 초기화가 effect를
+  // 다시 트리거해 방금 지운 대화를 재로드하는 것을 방지).
   $effect(() => {
-    const id = loadedId
+    const id = conversationId ?? null
     if (id == null || streaming) return
-    if (id === activeId) return
+    if (loadedFor === id) return
     load(id)
   })
 
@@ -50,6 +56,7 @@
       turns = c.messages
       tokens = { in: c.tokens_in, out: c.tokens_out }
       activeId = id
+      loadedFor = id
     } catch (e) {
       if ((e as ApiError).status === 401) return
       error = String(e)
@@ -58,6 +65,7 @@
 
   function newConversation() {
     if (streaming) return
+    // loadedFor는 그대로 — 되돌리면 effect가 방금 지운 대화를 재로드한다
     activeId = null
     turns = []
     tokens = null
@@ -71,6 +79,7 @@
     error = ''
     input = ''
     streaming = true
+    aborter = new AbortController()
     turns.push({ role: 'user', content: message })
     turns.push({ role: 'assistant', content: '' })
     const assistant = turns[turns.length - 1]
@@ -85,6 +94,7 @@
           assistant.content += d
           scrollBottom()
         },
+        aborter.signal,
       )
       if (r.conversationId != null && r.conversationId !== activeId) {
         activeId = r.conversationId
@@ -104,6 +114,7 @@
       error = String(e)
       if (!assistant.content) turns.splice(turns.indexOf(assistant), 1)
     } finally {
+      aborter = null
       streaming = false
       onActivity?.()
       scrollBottom()

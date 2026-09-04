@@ -3,6 +3,7 @@
   // 공고 연결 새 대화. 공고 캐시에서 사라진 대화는 "삭제된 공고"로 표시.
   import { api } from '../api'
   import { route } from '../router'
+  import { appState } from '../store'
   import ChatPanel from '../components/ChatPanel.svelte'
 
   interface Conv {
@@ -24,16 +25,27 @@
   let inboxTitles = $state<Record<string, string>>({})
 
   const seg = $derived($route.split('?')[0].split('/').filter(Boolean))
-  const selectedId = $derived(seg[0] === 'chats' && seg[1] ? Number(seg[1]) : null)
+  const selectedId = $derived.by(() => {
+    if (seg[0] !== 'chats' || !seg[1]) return null
+    const n = Number(seg[1])
+    return Number.isInteger(n) && n > 0 ? n : null
+  })
   const query = $derived(new URLSearchParams($route.split('?')[1] ?? ''))
   const newProject = $derived(query.get('project') ?? null)
   const panelProject = $derived(
     selectedId == null ? newProject : null,
   )
-  // 새 대화(?project=) 헤더 표시용 제목 — 인박스 목록에서 해석, 없으면 삭제된 공고
-  const projectTitle = $derived(
-    panelProject ? (inboxTitles[panelProject] ?? `삭제된 공고 #${panelProject}`) : null,
-  )
+  // 새 대화(?project=) 헤더 표시용 제목 — 인박스+파이프라인에서 해석
+  // (/api/inbox는 미분류만 반환하므로 applications 제목을 합쳐야 파이프라인 공고도
+  //  "삭제된 공고"로 오표시되지 않는다), 없으면 삭제된 공고
+  const projectTitle = $derived.by(() => {
+    if (!panelProject) return null
+    const titles = { ...inboxTitles }
+    for (const a of $appState?.applications ?? []) {
+      if (a.title && titles[a.id] == null) titles[a.id] = a.title
+    }
+    return titles[panelProject] ?? `삭제된 공고 #${panelProject}`
+  })
   async function loadList() {
     error = ''
     try {

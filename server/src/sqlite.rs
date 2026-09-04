@@ -390,7 +390,7 @@ pub fn list_conversations(dir: &Path) -> Result<Vec<Value>, io::Error> {
         .prepare(
             "SELECT c.id, c.project_id, c.title, c.created_at, c.tokens_in, c.tokens_out,
                     (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id),
-                    json_extract(s.data, '$.title')
+                    NULLIF(json_extract(s.data, '$.title'), '')
              FROM conversations c
              LEFT JOIN seen s ON s.id = c.project_id
              ORDER BY c.id DESC",
@@ -964,6 +964,7 @@ mod tests {
         // seen 캐시가 있는 공고 + 없는 공고 (create_conversation이 스키마 생성)
         create_conversation(&dir, Some("158"), "있는 공고 대화").unwrap();
         create_conversation(&dir, Some("99999"), "없는 공고 대화").unwrap();
+        create_conversation(&dir, Some("777"), "빈 제목 공고 대화").unwrap();
         {
             let conn = Connection::open(db_path(&dir)).unwrap();
             conn.execute(
@@ -971,16 +972,26 @@ mod tests {
                 [],
             )
             .unwrap();
+            conn.execute(
+                "INSERT INTO seen (id, data) VALUES ('777', '{\"title\":\"\"}')",
+                [],
+            )
+            .unwrap();
         }
 
         let list = list_conversations(&dir).unwrap();
-        assert_eq!(list.len(), 2);
+        assert_eq!(list.len(), 3);
         let with = list.iter().find(|c| c["project_id"] == "158").unwrap();
         assert_eq!(with["project_title"], "AI 챗봇 개발");
         let gone = list.iter().find(|c| c["project_id"] == "99999").unwrap();
         assert!(
             gone["project_title"].is_null(),
             "캐시에서 사라진 공고는 NULL"
+        );
+        let empty = list.iter().find(|c| c["project_id"] == "777").unwrap();
+        assert!(
+            empty["project_title"].is_null(),
+            "빈 제목도 NULL로 정규화 (NULLIF)"
         );
         let none = create_conversation(&dir, None, "무연결").unwrap();
         let _ = get_conversation(&dir, none).unwrap();
