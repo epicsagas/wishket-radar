@@ -93,6 +93,12 @@ export async function streamChat(
         handleLine(buf.slice(0, nl))
         buf = buf.slice(nl + 1)
       }
+      // 개행 없는 비정상 스트림의 메모리 소진 방지
+      if (buf.length > 1_000_000) {
+        error = error ?? '응답 프레임이 비정상적으로 큽니다 — 스트림 중단'
+        void reader.cancel().catch(() => {})
+        break
+      }
     }
     handleLine(buf + '\n') // 개행 없이 끝난 꼬리
   } catch (e) {

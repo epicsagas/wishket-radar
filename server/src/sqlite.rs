@@ -59,14 +59,17 @@ fn io_err(e: rusqlite::Error) -> io::Error {
     io::Error::other(e)
 }
 
-/// 연결마다 WAL·busy_timeout·NORMAL을 깐다. 대시보드 3초 폴링과 쓰기가 겹쳐도
-/// 읽기가 막히지 않는다. journal_mode는 파일 속성이라 이후 호출은 no-op.
+/// 연결마다 WAL·busy_timeout·NORMAL·foreign_keys를 깐다. 대시보드 3초 폴링과
+/// 쓰기가 겹쳐도 읽기가 막히지 않는다. journal_mode는 파일 속성이라 이후 호출은
+/// no-op. foreign_keys는 연결별 설정 — 스트리밍 중 대화가 삭제돼도 고아 메시지
+/// 행이 재삽입되지 않는다(FK 위반은 append_message의 오류 무시 경로로 흡수).
 /// WAL/-shm은 clean close 후 재생성될 때 umask 권한으로 돌아오므로 매 연결
 /// 0600을 재적용한다 — 키가 settings에 들어간 뒤로는 권한 이완이 곧 노출.
 fn open(dir: &Path) -> Result<Connection, io::Error> {
     let conn = Connection::open(db_path(dir)).map_err(io_err)?;
     conn.execute_batch(
-        "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL;",
+        "PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL;
+         PRAGMA foreign_keys=ON;",
     )
     .map_err(io_err)?;
     conn.execute_batch(SCHEMA).map_err(io_err)?;
