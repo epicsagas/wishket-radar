@@ -1187,4 +1187,41 @@ mod tests {
         assert_eq!(sent[2]["content"], "제안 방향 더 구체화해줘");
         let _ = std::fs::remove_dir_all(&dir);
     }
+
+    #[test]
+    fn delete_conversation_204_then_404() {
+        let dir = tmpdir("del-route");
+        let state = app(dir.clone());
+        let id = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(create_conversation(
+                State(state.clone()),
+                Json(ConversationBody {
+                    project_id: Some("158".into()),
+                    title: Some("지울 대화".into()),
+                }),
+            ))
+            .unwrap()
+            .0
+            .get("id")
+            .and_then(Value::as_i64)
+            .unwrap();
+        crate::sqlite::append_message(&dir, id, "user", "안녕?").unwrap();
+
+        let res = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(delete_conversation(State(state.clone()), AxPath(id)))
+            .unwrap();
+        assert_eq!(res, StatusCode::NO_CONTENT);
+        let res = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(delete_conversation(State(state), AxPath(id)))
+            .unwrap_err();
+        assert_eq!(res.0, StatusCode::NOT_FOUND);
+        assert!(
+            crate::sqlite::get_conversation(&dir, id).unwrap().is_none(),
+            "메시지 포함 대화 전체 삭제"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }
