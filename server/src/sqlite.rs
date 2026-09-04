@@ -415,17 +415,13 @@ pub fn list_conversations(dir: &Path) -> Result<Vec<Value>, io::Error> {
     Ok(rows)
 }
 
-/// 대화 단위 삭제 — 메시지도 함께(foreign_keys pragma 미사용이라 수동).
+/// 대화 단위 삭제 — 메시지는 foreign_keys=ON의 CASCADE로 함께 지운다.
 /// 삭제된 대화가 있으면 true, 없는 id면 false.
 pub fn delete_conversation(dir: &Path, id: i64) -> Result<bool, io::Error> {
-    let mut conn = open_ready(dir)?;
-    let tx = conn.transaction().map_err(io_err)?;
-    tx.execute("DELETE FROM messages WHERE conversation_id = ?1", [id])
-        .map_err(io_err)?;
-    let n = tx
+    let conn = open_ready(dir)?;
+    let n = conn
         .execute("DELETE FROM conversations WHERE id = ?1", [id])
         .map_err(io_err)?;
-    tx.commit().map_err(io_err)?;
     Ok(n > 0)
 }
 
