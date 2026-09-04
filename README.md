@@ -79,7 +79,7 @@ hermes plugins enable wishket-radar
 
 1. `wishket-mcp` 구동을 확인하고, 없으면 프리빌트(`install.sh` / `install.ps1`)를 깐다. `cargo`가 있어도 한방 설치가 먼저다. git 클론에서 한방 설치가 실패했을 때만 `cargo build --release`를 한다.
 2. 주력 스택, 가중치, 역할, 근무 조건을 물어 `~/.wishket-radar/profile.yaml`을 만든다. 키워드 동의어(예: Rust → rust, 러스트, cargo, axum)도 채운다.
-3. 원하면 `scan_new`로 베이스라인 스캔을 한 번 돌려 `~/.wishket-radar/state.json`에 현재 공고를 기록한다. 이후 스캔은 신규만 본다.
+3. 원하면 `scan_new`로 베이스라인 스캔을 한 번 돌려 `~/.wishket-radar/state.db`에 현재 공고를 기록한다. 이후 스캔은 신규만 본다. 구버전(`state.json`·`applications.yaml`·`profile.yaml`)이 있으면 첫 기동에 자동 이관되고 원본은 `*.migrated`로 남는다.
 
 이미 프로필이 있으면 요약을 보여 주고 재설정 여부만 확인한다. 프로필은 저장소에 커밋하지 않는다.
 
@@ -125,7 +125,7 @@ mkdir -p ~/.wishket-radar
 cp profile.example.yaml ~/.wishket-radar/profile.yaml
 ```
 
-리포트는 `~/.wishket-radar/reports/`, seen 캐시는 `~/.wishket-radar/state.json`이다.
+리포트는 `~/.wishket-radar/reports/`, seen 캐시는 `~/.wishket-radar/state.db`(SQLite, WAL)다.
 
 ## 대시보드 (webui)
 
@@ -165,9 +165,9 @@ scripts/wishket-mcp dashboard --port 8790 --no-open
 
 ```
 ~/.wishket-radar/
-├── profile.yaml        # 매칭 프로필 (기술 스택, 가중치, 역할 등)
-├── state.json          # seen 프로젝트 + 인박스 트리아지 + 상세 캐시 (90일 후 정리)
-├── applications.yaml   # 지원 파이프라인 (wishket-pipeline/webui)
+├── state.db            # seen 캐시 + 인박스 트리아지 + 파이프라인 + 프로필 (SQLite WAL, 0600)
+├── backups/            # 주간 VACUUM INTO 스냅샷 (4세대)
+├── *.migrated          # 구 state.json/applications.yaml/profile.yaml (이관 원본)
 ├── dashboard-token     # webui 접근 토큰 (자동 생성, 0600)
 ├── reports/            # 스캔 리포트 (한국어 markdown)
 ├── proposals/<공고ID>/ # draft.md(검토) + form.txt(위시켓 붙여넣기)

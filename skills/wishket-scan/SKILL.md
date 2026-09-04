@@ -7,9 +7,9 @@ Diff scan for new Wishket projects. Calls the `scan_new` MCP tool once to return
 
 1. If the request specifies keywords or categories, pass them as arguments; otherwise use defaults (`development`, `web,pc,android,ios`, `3` pages).
 2. Summarize results: new count (`new_count`) and list sorted by match score. If `baseline: true`, notify the user that this was a baseline scan.
-3. If `new_count == 0`, report "No new projects" along with the timestamp of the last scan (`last_scan` from `~/.wishket-radar/state.json`).
+3. If `new_count == 0`, report "No new projects" along with the timestamp of the last scan (`last_scan` from `~/.wishket-radar/state.db` (SQLite, WAL)).
 4. If deep analysis or a full report is needed, suggest expanding via the `wishket-scout` skill.
 
 ## Workflow After Scan
 
-Scanned projects accumulate in `state.json` and remain in the dashboard **Inbox** until triaged. Triaging (Interested vs. Skip) is quickest via the web UI (`wishket-dashboard`), and only items marked as Interested proceed into the application pipeline.
+Scanned projects accumulate in `state.db` (SQLite, WAL) and remain in the dashboard **Inbox** until triaged. Triaging (Interested vs. Skip) is quickest via the web UI (`wishket-dashboard`), and only items marked as Interested proceed into the application pipeline.

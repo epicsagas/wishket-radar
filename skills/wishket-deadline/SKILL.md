@@ -19,7 +19,7 @@ flowchart LR
 ## Step 1: Extract Information
 
 - For project ID/URL, fetch deadline and title via `get_project`.
-- For `applications.yaml` entries (via `wishket-pipeline`), use `deadline`, `title`, and `url` fields.
+- For pipeline entries in `state.db` (via `wishket-pipeline`), use `deadline`, `title`, and `url` fields.
 - If specific time is absent, create an all-day event.
 - If the deadline has already passed, notify the user without creating an event.
 

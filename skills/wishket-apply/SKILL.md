@@ -23,7 +23,7 @@ flowchart LR
 - If the user provides a project ID or URL, retrieve details via `get_project`.
 - If given a scout report file, extract the project ID and call `get_project`.
 - If missing, search using `search_projects` and confirm with the user.
-- If `description` is already cached in `state.json` under `seen[<id>]`, reuse it first to avoid the 5-second `Crawl-delay`.
+- If `description` is already cached in the `state.db` cache under `seen[<id>]`, reuse it first to avoid the 5-second `Crawl-delay`.
 - Writing a proposal means the project is already at 관심. If `triage` is missing, suggest marking it Interested in `wishket-pipeline` first.
 
 ## Step 2: Gather Materials
@@ -74,7 +74,7 @@ Standard sections (both files):
   - Examples: `proposals/158080/2026-09-02-draft.md`, `proposals/158080/2026-09-02-form.txt`.
   - Do not duplicate the project ID in the filename.
 - Chat summary: 1-line strategy, key matching strengths, budget status, recommended portfolio attachments.
-- When application is confirmed: Promote stage to "지원" in `wishket-pipeline` (`applications.yaml`), recording budget, duration, and deadline.
+- When application is confirmed: Promote stage to "지원" in `wishket-pipeline` (pipeline store in `state.db`), recording budget, duration, and deadline.
 - If drafting is complete but submission is deferred: Keep in "관심" and set `next_action` to "제안서 초안 완료 — 제출 여부 결정".
 
 ## Caution
