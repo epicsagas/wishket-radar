@@ -36,6 +36,7 @@ export function errorOf(frame: unknown): string | null {
 export async function streamChat(
   body: { message: string; conversation_id?: number; project_id?: string },
   onDelta: (text: string) => void,
+  signal?: AbortSignal,
 ): Promise<StreamResult> {
   const res = await fetch('/api/ai/chat', {
     method: 'POST',
@@ -44,9 +45,11 @@ export async function streamChat(
       Authorization: `Bearer ${localStorage.getItem('wk_token') ?? ''}`,
     },
     body: JSON.stringify(body),
+    signal,
   })
   const conversationId = Number(res.headers.get('x-conversation-id')) || null
   if (!res.ok) {
+    if (res.status === 401) window.dispatchEvent(new Event('wk-unauthorized'))
     let msg = `${res.status}`
     try {
       const j = await res.json()
@@ -65,8 +68,9 @@ export async function streamChat(
   let error: string | null = null
 
   const handleLine = (line: string) => {
-    if (!line.startsWith('data: ')) return
-    const payload = line.slice(6).trim()
+    // 서버 relay가 data:{...}(무공간)도 받듯 클라도 겸용으로
+    if (!line.startsWith('data:')) return
+    const payload = line.slice(5).trim()
     if (payload === '[DONE]') return
     try {
       const frame = JSON.parse(payload)

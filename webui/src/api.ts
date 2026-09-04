@@ -47,5 +47,6 @@ export async function api<T = unknown>(path: string, opts: RequestInit = {}): Pr
     } catch { /* 본문 없음 */ }
     throw new ApiError(res.status, msg)
   }
+  if (res.status === 204) return undefined as T // 빈 본문 — res.json()이 실패한다
   return (await res.json()) as T
 }

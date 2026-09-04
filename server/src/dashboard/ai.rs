@@ -12,7 +12,7 @@ use std::time::Duration;
 use axum::body::Body;
 use axum::extract::{Path as AxPath, State};
 use axum::http::{header, HeaderValue, StatusCode};
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use futures_util::{Stream, StreamExt};
@@ -712,12 +712,38 @@ async fn chat(State(app): ApiState, Json(body): Json<ChatBody>) -> Result<Respon
         history.remove(0);
     }
 
-    let resp = provider_request(&cfg, &system, &history, true)
-        .send()
-        .await
-        .map_err(|e| err(StatusCode::BAD_GATEWAY, format!("공급자 연결 실패: {e}")))?;
+    // 대화·user 메시지는 이미 영속됐으므로 공급자 실패에서도 id를 돌려준다 —
+    // Err(ApiError) 경로는 커스텀 헤더를 못 싣기에 여기선 Ok(Response)로 만든다.
+    // 클라가 id를 받아야 재시도 시 고아 대화가 중복 생성되지 않는다.
+    let chat_error = |status: StatusCode, msg: String| -> Response {
+        let mut resp = (
+            status,
+            Json(json!({"error": msg, "conversation_id": conversation_id})),
+        )
+            .into_response();
+        if let Ok(hv) = HeaderValue::from_str(&conversation_id.to_string()) {
+            resp.headers_mut().insert("x-conversation-id", hv);
+        }
+        resp
+    };
+
+    let resp = match provider_request(&cfg, &system, &history, true).send().await {
+        Ok(r) => r,
+        Err(e) => {
+            return Ok(chat_error(
+                StatusCode::BAD_GATEWAY,
+                format!("공급자 연결 실패: {e}"),
+            ))
+        }
+    };
     if !resp.status().is_success() {
-        return Err(provider_error(resp).await);
+        let (st, jv) = provider_error(resp).await;
+        let msg =
+            jv.0.get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("공급자 오류")
+                .to_string();
+        return Ok(chat_error(st, msg));
     }
     let ct = resp
         .headers()
