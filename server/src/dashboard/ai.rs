@@ -967,24 +967,48 @@ mod tests {
 
     #[tokio::test]
     async fn chat_stream_persists_text_and_usage() {
-        // SSE 프레임을 흉내 내는 공급자 — 텍스트 델타 + usage
-        let frames = "data: {\"delta\":{\"text\":\"핵심 스택이 \"}}\n\n\
-                      data: {\"delta\":{\"text\":\"일치합니다.\"}}\n\n\
-                      data: {\"usage\":{\"input_tokens\":30,\"output_tokens\":12}}\n\n\
-                      data: [DONE]\n\n";
+        // SSE 프레임을 흉내 내는 공급자 — 텍스트 델타 + usage.
+        // 받은 요청 본문을 기록해 AC3(컨텍스트 주입·전체 배열 재전송)를 단증한다.
+        let frames = Arc::new(
+            "data: {\"delta\":{\"text\":\"핵심 스택이 \"}}\n\n\
+             data: {\"delta\":{\"text\":\"일치합니다.\"}}\n\n\
+             data: {\"usage\":{\"input_tokens\":30,\"output_tokens\":12}}\n\n\
+             data: [DONE]\n\n"
+                .to_string(),
+        );
+        let captured: Arc<std::sync::Mutex<Vec<Value>>> = Arc::default();
+        let cap = captured.clone();
         let app_routes = axum::Router::new().route(
             "/v1/messages",
-            axum::routing::post(move || async move {
-                let mut res = axum::response::Response::new(Body::from(frames));
-                res.headers_mut().insert(
-                    header::CONTENT_TYPE,
-                    HeaderValue::from_static("text/event-stream"),
-                );
-                res
+            axum::routing::post(move |body: String| {
+                let frames = frames.clone();
+                let cap = cap.clone();
+                async move {
+                    if let Ok(v) = serde_json::from_str::<Value>(&body) {
+                        cap.lock().unwrap().push(v);
+                    }
+                    let mut res = axum::response::Response::new(Body::from((*frames).clone()));
+                    res.headers_mut().insert(
+                        header::CONTENT_TYPE,
+                        HeaderValue::from_static("text/event-stream"),
+                    );
+                    res
+                }
             }),
         );
         let base = spawn_mock(app_routes).await;
         let dir = tmpdir("chat");
+        // 공고 캐시 시드 — 컨텍스트 주입 검증용
+        let mut st = crate::state::State::default();
+        let mut e = crate::state::SeenEntry {
+            title: "Rust 실시간 파이프라인 백엔드".into(),
+            ..crate::state::SeenEntry::default()
+        };
+        e.description = Some("<p>Rust 기반 실시간 데이터 수집 파이프라인</p>".into());
+        e.first_seen = "2026-09-04".into();
+        e.url = Some("https://www.wishket.com/project/158063/".into());
+        st.seen.insert("158063".into(), e);
+        crate::state::save_in(&dir, &st).unwrap();
         let raw = serde_json::to_string(&cfg("anthropic", Some(&base))).unwrap();
         sqlite::save_setting(&dir, SETTINGS_KEY, &raw).unwrap();
 
@@ -1037,7 +1061,45 @@ mod tests {
         );
         assert_eq!(conv["tokens_in"], 30);
         assert_eq!(conv["tokens_out"], 12);
-        // 후속 질문 — 전체 배열 재전송 확인 (공급자가 받는 history 길이)
+
+        // AC3: 후속 질문 — 시스템 컨텍스트 + 전체 배열(user/assistant/user) 재전송
+        let res2 = chat(
+            State(a.clone()),
+            Json(ChatBody {
+                message: "제안 방향 더 구체화해줘".into(),
+                conversation_id: Some(conv_id),
+                project_id: None,
+            }),
+        )
+        .await
+        .unwrap();
+        let _ = axum::body::to_bytes(res2.into_body(), 1 << 20)
+            .await
+            .unwrap();
+        for _ in 0..40 {
+            if captured.lock().unwrap().len() >= 2 {
+                break;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+        }
+        let bodies = captured.lock().unwrap();
+        assert_eq!(bodies.len(), 2, "공급자 요청 2회 기록");
+        let first = &bodies[0];
+        assert!(
+            first["system"]
+                .as_str()
+                .unwrap_or("")
+                .contains("실시간 데이터 수집 파이프라인"),
+            "AC3 공고 캐시 시스템 컨텍스트 주입"
+        );
+        let last = &bodies[1];
+        let sent = last["messages"].as_array().unwrap();
+        assert_eq!(sent.len(), 3, "AC3 전체 배열 재전송");
+        assert_eq!(sent[0]["role"], "user");
+        assert_eq!(sent[1]["role"], "assistant");
+        assert_eq!(sent[1]["content"], "핵심 스택이 일치합니다.");
+        assert_eq!(sent[2]["role"], "user");
+        assert_eq!(sent[2]["content"], "제안 방향 더 구체화해줘");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
