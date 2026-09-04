@@ -556,6 +556,15 @@ async fn get_inbox(State(app): ApiState) -> Json<Value> {
     Json(json!({ "inbox": items, "total_seen": scan.seen.len() }))
 }
 
+/// 과거 버전이 JSON-LD baseSalary 더미를 budget으로 저장한 형태 — "9999999원".
+/// 실제 카드·본문 표기는 "예상 금액 N원" / "2,000만원 (부가세 별도)" 꼴이라
+/// 순수 숫자+원은 더미로 판정해도 안전하다.
+fn is_dummy_salary_budget(b: &Option<String>) -> bool {
+    b.as_deref()
+        .and_then(|s| s.strip_suffix('원'))
+        .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
+}
+
 /// POST /api/inbox/{id}/fetch — 위시켓 상세를 지금 한 번 긁어 seen 항목을 채운다.
 /// 자동 조회는 하지 않는다(Crawl-delay). 사용자가 버튼을 눌렀을 때만.
 async fn fetch_inbox_detail(
@@ -616,7 +625,10 @@ async fn fetch_inbox_detail(
             e.title = detail.card.title.clone();
         }
         e.url = Some(detail.card.url.clone());
-        if e.budget.is_none() {
+        // 과거 버전이 JSON-LD baseSalary 더미("9999999원" 등)를 budget으로
+        // 저장해 둔 항목이 있다 — 순수 숫자+원 형태는 더미로 보고 본문 예산으로
+        // 교체한다. 실제 카드·본문 표기는 "예상 금액 N원" / "2,000만원 (…)" 꼴.
+        if e.budget.is_none() || is_dummy_salary_budget(&e.budget) {
             // 상세 페이지엔 카드 DOM이 없다 — parse_detail이 본문 예산 라인에서
             // 이미 건져 온다. JSON-LD baseSalary는 더미(9999999원 등)가 섞여
             // budget으로 쓰면 안 된다(정보성 필드로만 노출).
@@ -791,6 +803,19 @@ pub fn router() -> Router<Arc<AppState>> {
 #[cfg(test)]
 mod tests {
     use super::render_markdown;
+
+    #[test]
+    fn dummy_salary_budget_detection() {
+        use super::is_dummy_salary_budget as dummy;
+        let s = |v: &str| Some(v.to_string());
+        assert!(dummy(&s("9999999원")), "baseSalary 수치형 더미");
+        assert!(!dummy(&s("예상 금액 8000000~10000000원")));
+        assert!(!dummy(&s("2,000만원 (부가세 별도)")), "쉼표·단위 있으면 실값");
+        assert!(!dummy(&s("월 금액 8,000,000원 /월")));
+        assert!(!dummy(&s("예상 금액 협의 후 결정")));
+        assert!(!dummy(&None));
+        assert!(!dummy(&s("원")), "빈 숫자부는 더미 아님(방어)");
+    }
 
     #[test]
     fn inbox_excludes_yaml_pipeline_items() {
