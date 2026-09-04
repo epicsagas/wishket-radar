@@ -1,13 +1,13 @@
 ---
 name: wishket-pipeline
-description: Track Wishket application pipeline. Manages project stages across the 10 Wishket phases in applications.yaml, calculating conversion and win rates. 위시켓 지원 파이프라인 추적. 관심 공고 관리 및 10단계 상태 갱신, 수주율/전환율 계산. "위시켓 지원했어", "지원 현황", "파이프라인 보여줘", "미팅 잡혔어", "계약했어", "떨어졌어", "탈락" 등에 사용.
+description: Track Wishket application pipeline. Manages project stages across the 10 Wishket phases in the pipeline store (state.db), calculating conversion and win rates. 위시켓 지원 파이프라인 추적. 관심 공고 관리 및 10단계 상태 갱신, 수주율/전환율 계산. "위시켓 지원했어", "지원 현황", "파이프라인 보여줘", "미팅 잡혔어", "계약했어", "떨어졌어", "탈락" 등에 사용.
 ---
 
 # wishket-pipeline — Wishket Application Pipeline Tracker
 
 ## Data Schema
 
-`~/.wishket-radar/applications.yaml` (Canonical data source; create if not present):
+`~/.wishket-radar/state.db`의 `applications` 테이블 (v0.4부터 SQLite가 정규 소스. 구 `applications.yaml`이 있으면 첫 기동에 자동 이관되고 `applications.yaml.migrated`로 보존된다. 필드 스키마는 아래와 동일):
 
 ```yaml
 applications:
@@ -40,7 +40,7 @@ flowchart LR
     H -->|Contracted| I[체결 (Contracted)] --> J[진행 중 (In Progress)] --> K[완료 (Completed)]
 ```
 
-Scan results accumulate in `seen` inside `state.json`. Items without a `triage` field remain in the Inbox. When the user marks an item as Interested in the dashboard Inbox, `triage: interested` is set, and **only Interested items** appear in the pipeline. Changing the stage to Applied or later promotes the item into `applications.yaml`.
+Scan results accumulate in `seen` inside `state.db` (SQLite, WAL). Items without a `triage` field remain in the Inbox. When the user marks an item as Interested in the dashboard Inbox, `triage: interested` is set, and **only Interested items** appear in the pipeline. Changing the stage to Applied or later promotes the item into the pipeline store (`state.db` applications).
 
 ## The 10 Official Wishket Stages
 
@@ -62,8 +62,8 @@ Win rate = (체결 + 진행 중 + 완료) / (체결 + 진행 중 + 완료 + 미�
 Examine stage conversion rates (Applied -> Consulting -> Meeting -> Contracted -> Completed) to identify funnel drop-offs.
 
 ### Rules:
-- Triage in the dashboard (`wishket-dashboard`) is fastest. If triaging via chat ("관심 있어"), update the item in `state.json` with `triage: interested` and `triaged_at`.
-- Promote items to `applications.yaml` when applying (via `wishket-apply` or direct user statement "지원했어").
+- Triage in the dashboard (`wishket-dashboard`) is fastest. If triaging via chat ("관심 있어"), call the dashboard API instead of editing files: `POST /api/inbox/{id}/triage` with `{"action":"interested"}` (token: `~/.wishket-radar/dashboard-token`). Direct `state.db` edits are discouraged.
+- Promote items to the pipeline store when applying (via `wishket-apply` or direct user statement "지원했어").
 - Detect state transitions from user conversation: "지원했어" -> 지원, "위시켓에서 연락 왔어" -> 상담, "미팅 잡혔어" -> 미팅, "계약했어" -> 체결, "착수했어" -> 진행 중, "끝났어/정산됐어" -> 완료, "떨어졌어" -> 탈락, "조건 안 맞아서 엎어졌어" -> 미체결. Clarify if ambiguous.
 - Legacy status names (검토중/면담/수주/거절) are automatically mapped by the server. Always write using the new 10 stages.
 - Keep only the latest `status_at` date per item.
@@ -81,4 +81,4 @@ When responding to "show pipeline" requests:
 
 - Suggest `wishket-deadline` (calendar export) when registering an application with a deadline.
 - Suggest `wishket-feedback` once 5+ closed items (Won / Uncontracted / Rejected) accumulate.
-- Items triaged as Interested in Inbox appear automatically in the pipeline without manual registration. Changing the stage to 지원 or later promotes the item into `applications.yaml`.
+- Items triaged as Interested in Inbox appear automatically in the pipeline without manual registration. Changing the stage to 지원 or later promotes the item into the pipeline store (`state.db` applications).

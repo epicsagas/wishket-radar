@@ -23,7 +23,7 @@ flowchart LR
 
 ## Step 1: Input
 
-- Project ID/URL: Fetch via `get_project`. Check `state.json` cache `seen[<id>].description` first if available.
+- Project ID/URL: Fetch via `get_project`. Check `state.db` cache `seen[<id>].description` first if available.
 - Requirement Document (PDF/PPT/DOCX): Extract text following `wishket-portfolio` extraction methods.
 - Fallback: Ask user for verbal/bullet list of features.
 

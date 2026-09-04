@@ -23,7 +23,7 @@ Call `scan_new` on the `wishket` MCP server. Default parameters (`category=devel
 
 - If the user specified keywords, include `keyword`.
 - On initial run (`baseline: true`), all fetched projects are new; indicate "Baseline Scan" in the report.
-- If `new_count == 0`: return "No new projects" along with the last scan time (`last_scan` in `~/.wishket-radar/state.json`) and exit.
+- If `new_count == 0`: return "No new projects" along with the last scan time (`last_scan` in `~/.wishket-radar/state.db` (SQLite, WAL)) and exit.
 - If `total_matching_filter` significantly exceeds retrieved items (30 items limit), note in the report: "Fetched top N pages only".
 
 ## Step 2: Candidate Selection

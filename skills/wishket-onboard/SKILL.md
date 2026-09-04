@@ -31,7 +31,7 @@ Wishket plugin onboarding. Sets up a fresh environment so that wishket-radar run
 
 4. **Baseline Scan**:
    - Propose running `scan_new` once (defaults: `development`, 3 pages).
-   - On the first run, all fetched projects are recorded in the baseline cache (`~/.wishket-radar/state.json`) — subsequent scans will only report newly posted projects.
+   - On the first run, all fetched projects are recorded in the baseline cache (`~/.wishket-radar/state.db` (SQLite, WAL)) — subsequent scans will only report newly posted projects.
    - Skip if the user declines.
 
 5. **Completion & Next Steps Guide**:

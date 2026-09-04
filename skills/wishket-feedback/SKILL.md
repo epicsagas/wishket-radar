@@ -1,6 +1,6 @@
 ---
 name: wishket-feedback
-description: Calibrate matching profile using historical application outcomes. Analyzes win rates by grade in applications.yaml to suggest profile.yaml adjustments. 지원 결과 데이터로 매칭 프로필 보정. "매칭 잘 안 되네", "프로필 점검해줘", "수주율 높여줘", "피드백 분석" 등에 사용.
+description: Calibrate matching profile using historical application outcomes. Analyzes win rates by grade in the pipeline store (state.db applications) to suggest profile.yaml adjustments. 지원 결과 데이터로 매칭 프로필 보정. "매칭 잘 안 되네", "프로필 점검해줘", "수주율 높여줘", "피드백 분석" 등에 사용.
 ---
 
 # wishket-feedback — Profile Calibration via Application Outcomes
@@ -9,7 +9,7 @@ description: Calibrate matching profile using historical application outcomes. A
 
 ```mermaid
 flowchart LR
-    A[applications.yaml] --> B{Sufficient sample?}
+    A[pipeline store (state.db)] --> B{Sufficient sample?}
     B -- Under 5 items --> Z[Notify insufficient data]
     B -- 5+ items --> C[Cross-analyze win rates by grade/stack]
     C --> D[Detect anomalies]
@@ -20,7 +20,7 @@ flowchart LR
 
 ## Step 1: Gather Data
 
-- Read `~/.wishket-radar/applications.yaml`. If there are fewer than 5 closed items (`체결`, `진행 중`, `완료`, `미체결`, `탈락`), terminate analysis and advise collecting more outcome data first.
+- Read applications from `~/.wishket-radar/state.db` (SQLite — `sqlite3 ~/.wishket-radar/state.db 'select data from applications'`, 행마다 Application JSON). 구 `applications.yaml`은 자동 이관된다. If there are fewer than 5 closed items (`체결`, `진행 중`, `완료`, `미체결`, `탈락`), terminate analysis and advise collecting more outcome data first.
 - Analyze only closed items; exclude in-progress states (`관심`, `지원`, `상담`, `미팅`).
 - Check step-by-step conversion rates before overall win rates.
 
