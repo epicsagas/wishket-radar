@@ -703,9 +703,14 @@ async fn chat(State(app): ApiState, Json(body): Json<ChatBody>) -> Result<Respon
     // 고아 user 턴(공급자 실패로 응답 없는 턴)이 남아 있으면 [user,user]가
     // 되어 공급자가 400으로 거부한다 — 연속 same-role은 병합해 교대를 보장.
     merge_consecutive(&mut history);
-    // 긴 대화의 context-length 폭발 방지 — 최근 40개만.
+    // 긴 대화의 context-length 폭발 방지 — 최근 40개만. 절단이 홀수로
+    // 떨어지면 첫 메시지가 assistant가 되어 공급자가 400으로 거부하므로
+    // user로 시작하게 한 개 더 버린다.
     let skip = history.len().saturating_sub(MAX_HISTORY);
     history.drain(..skip);
+    if history.first().map(|(r, _)| r != "user").unwrap_or(false) {
+        history.remove(0);
+    }
 
     let resp = provider_request(&cfg, &system, &history, true)
         .send()

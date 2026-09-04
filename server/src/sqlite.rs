@@ -521,14 +521,14 @@ fn weekly_snapshot(dir: &Path) {
                 )
                 .is_ok()
             {
-                let _ = std::fs::rename(&tmp, &target);
-                // 스냅샷은 settings(ai_config 키 포함)를 통째로 복사한다 — 0600.
+                // 스냅샷은 settings(ai_config 키 포함)를 통째로 복사한다 —
+                // 0600을 rename 전에: 잠깐이라도 0644 최종 경로를 남기지 않는다.
                 #[cfg(unix)]
                 {
                     use std::os::unix::fs::PermissionsExt;
-                    let _ =
-                        std::fs::set_permissions(&target, std::fs::Permissions::from_mode(0o600));
+                    let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
                 }
+                let _ = std::fs::rename(&tmp, &target);
             } else {
                 let _ = std::fs::remove_file(&tmp);
             }
