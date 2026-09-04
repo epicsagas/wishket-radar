@@ -774,6 +774,17 @@ async fn get_conversation(
     }
 }
 
+async fn delete_conversation(
+    State(app): ApiState,
+    AxPath(id): AxPath<i64>,
+) -> Result<StatusCode, ApiError> {
+    match sqlite::delete_conversation(&app.state_dir, id) {
+        Ok(true) => Ok(StatusCode::NO_CONTENT),
+        Ok(false) => Err(err(StatusCode::NOT_FOUND, "대화를 찾을 수 없습니다")),
+        Err(e) => Err(err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
 // ---------------------------------------------------------------------------
 
 pub fn router() -> Router<Arc<AppState>> {
@@ -785,7 +796,10 @@ pub fn router() -> Router<Arc<AppState>> {
             "/ai/conversations",
             get(list_conversations).post(create_conversation),
         )
-        .route("/ai/conversations/{id}", get(get_conversation))
+        .route(
+            "/ai/conversations/{id}",
+            get(get_conversation).delete(delete_conversation),
+        )
 }
 
 #[cfg(test)]

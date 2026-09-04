@@ -379,14 +379,18 @@ pub fn create_conversation(
     Ok(conn.last_insert_rowid())
 }
 
-/// 대화 목록 (최신 먼저) — usage 누적·메시지 수 포함.
+/// 대화 목록 (최신 먼저) — usage 누적·메시지 수·연결 공고 제목 포함.
+/// project_title은 seen 캐시(data JSON)에서 추출 — 캐시에서 사라진 공고는 NULL.
 pub fn list_conversations(dir: &Path) -> Result<Vec<Value>, io::Error> {
     let conn = open_ready(dir)?;
     let mut stmt = conn
         .prepare(
             "SELECT c.id, c.project_id, c.title, c.created_at, c.tokens_in, c.tokens_out,
-                    (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id)
-             FROM conversations c ORDER BY c.id DESC",
+                    (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id),
+                    json_extract(s.data, '$.title')
+             FROM conversations c
+             LEFT JOIN seen s ON s.id = c.project_id
+             ORDER BY c.id DESC",
         )
         .map_err(io_err)?;
     let rows = stmt
@@ -399,12 +403,27 @@ pub fn list_conversations(dir: &Path) -> Result<Vec<Value>, io::Error> {
                 "tokens_in": r.get::<_, i64>(4)?,
                 "tokens_out": r.get::<_, i64>(5)?,
                 "messages": r.get::<_, i64>(6)?,
+                "project_title": r.get::<_, Option<String>>(7)?,
             }))
         })
         .map_err(io_err)?
         .collect::<Result<Vec<_>, _>>()
         .map_err(io_err)?;
     Ok(rows)
+}
+
+/// 대화 단위 삭제 — 메시지도 함께(foreign_keys pragma 미사용이라 수동).
+/// 삭제된 대화가 있으면 true, 없는 id면 false.
+pub fn delete_conversation(dir: &Path, id: i64) -> Result<bool, io::Error> {
+    let mut conn = open_ready(dir)?;
+    let tx = conn.transaction().map_err(io_err)?;
+    tx.execute("DELETE FROM messages WHERE conversation_id = ?1", [id])
+        .map_err(io_err)?;
+    let n = tx
+        .execute("DELETE FROM conversations WHERE id = ?1", [id])
+        .map_err(io_err)?;
+    tx.commit().map_err(io_err)?;
+    Ok(n > 0)
 }
 
 /// 대화 헤더 + 메시지 배열. 없는 id면 None.
@@ -914,6 +933,57 @@ mod tests {
         assert_eq!(list.len(), 1);
         assert_eq!(list[0]["messages"], 2);
         assert!(get_conversation(&dir, 999).unwrap().is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn delete_conversation_removes_messages() {
+        let dir = tmpdir("conv-del");
+        let id = create_conversation(&dir, None, "지울 대화").unwrap();
+        append_message(&dir, id, "user", "안녕?").unwrap();
+        append_message(&dir, id, "assistant", "네.").unwrap();
+        add_usage(&dir, id, 10, 5).unwrap();
+
+        assert!(delete_conversation(&dir, id).unwrap());
+        assert!(get_conversation(&dir, id).unwrap().is_none());
+        assert!(!delete_conversation(&dir, id).unwrap(), "미존재 id는 false");
+        let conn = Connection::open(db_path(&dir)).unwrap();
+        let left: i64 = conn
+            .query_row("SELECT COUNT(*) FROM messages", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(left, 0, "메시지도 함께 삭제");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn list_conversations_joins_project_title() {
+        let dir = tmpdir("conv-title");
+        // seen 캐시가 있는 공고 + 없는 공고 (create_conversation이 스키마 생성)
+        create_conversation(&dir, Some("158"), "있는 공고 대화").unwrap();
+        create_conversation(&dir, Some("99999"), "없는 공고 대화").unwrap();
+        {
+            let conn = Connection::open(db_path(&dir)).unwrap();
+            conn.execute(
+                "INSERT INTO seen (id, data) VALUES ('158', '{\"title\":\"AI 챗봇 개발\"}')",
+                [],
+            )
+            .unwrap();
+        }
+
+        let list = list_conversations(&dir).unwrap();
+        assert_eq!(list.len(), 2);
+        let with = list.iter().find(|c| c["project_id"] == "158").unwrap();
+        assert_eq!(with["project_title"], "AI 챗봇 개발");
+        let gone = list.iter().find(|c| c["project_id"] == "99999").unwrap();
+        assert!(
+            gone["project_title"].is_null(),
+            "캐시에서 사라진 공고는 NULL"
+        );
+        let none = create_conversation(&dir, None, "무연결").unwrap();
+        let _ = get_conversation(&dir, none).unwrap();
+        let list2 = list_conversations(&dir).unwrap();
+        let orphan = list2.iter().find(|c| c["title"] == "무연결").unwrap();
+        assert!(orphan["project_title"].is_null());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
