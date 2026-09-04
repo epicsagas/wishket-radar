@@ -521,3 +521,4 @@ profile.md
 !webui/src/lib/**
 # dist/ is vite output. rust-embed writes a stub via server/build.rs when missing.
 
+.playwright-mcp/
