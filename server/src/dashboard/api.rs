@@ -810,7 +810,10 @@ mod tests {
         let s = |v: &str| Some(v.to_string());
         assert!(dummy(&s("9999999원")), "baseSalary 수치형 더미");
         assert!(!dummy(&s("예상 금액 8000000~10000000원")));
-        assert!(!dummy(&s("2,000만원 (부가세 별도)")), "쉼표·단위 있으면 실값");
+        assert!(
+            !dummy(&s("2,000만원 (부가세 별도)")),
+            "쉼표·단위 있으면 실값"
+        );
         assert!(!dummy(&s("월 금액 8,000,000원 /월")));
         assert!(!dummy(&s("예상 금액 협의 후 결정")));
         assert!(!dummy(&None));
