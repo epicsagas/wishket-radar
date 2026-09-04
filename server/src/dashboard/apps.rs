@@ -113,10 +113,25 @@ pub fn load(dir: &Path) -> Loaded {
     if crate::sqlite::present(dir) {
         match crate::sqlite::load_applications(dir) {
             Ok(vals) if !vals.is_empty() => {
-                let applications: Vec<Application> = vals
-                    .into_iter()
-                    .filter_map(|v| serde_json::from_value(v).ok())
-                    .collect();
+                // 역직렬화 실패 행을 조용히 버리면 다음 save 때 유실된다 —
+                // yaml 경로와 동일하게 parse_error로 전체를 막는다.
+                let mut applications = Vec::with_capacity(vals.len());
+                for v in vals {
+                    match serde_json::from_value::<Application>(v) {
+                        Ok(mut a) => {
+                            if let Some(new) = migrate_status(&a.status) {
+                                a.status = new.to_string();
+                            }
+                            applications.push(a);
+                        }
+                        Err(e) => {
+                            return Loaded {
+                                file: ApplicationsFile::default(),
+                                parse_error: Some(e.to_string()),
+                            }
+                        }
+                    }
+                }
                 return Loaded {
                     file: ApplicationsFile { applications },
                     parse_error: None,
