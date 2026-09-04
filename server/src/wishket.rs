@@ -448,6 +448,24 @@ pub fn budget_metrics(budget: Option<&str>, duration: Option<&str>) -> BudgetMet
     m
 }
 
+/// 본문 예산 라인 → 카드 표기 형식("예상 금액 X~Y원"). 프라이빗 공고는
+/// 카드 DOM도 있고 baseSalary도 더미(9999999원 등)라 본문이 유일한 실제 출처다.
+/// "예산"이 들어간 줄 중 금액이 있는 첫 줄을 찾고, 역전 범위는 min/max를 정렬한다.
+pub fn budget_from_description(desc: &str) -> Option<String> {
+    let line = desc
+        .lines()
+        .find(|l| l.contains("예산") && !amounts(l).is_empty())?;
+    let a = amounts(line);
+    match a.as_slice() {
+        [x, y, ..] => {
+            let (min, max) = (*x.min(y), *x.max(y));
+            Some(format!("예상 금액 {min}~{max}원"))
+        }
+        [v] => Some(format!("예상 금액 {v}원")),
+        _ => None,
+    }
+}
+
 /// Parse detail page. Combines JSON-LD JobPosting (title/description/dates)
 /// with the condition rows and skill tags from the HTML body.
 /// JobPosting JSON-LD가 없는 페이지(마감 등)에서 제목을 건진다.
@@ -562,6 +580,14 @@ pub fn parse_detail(id: &str, html: &str) -> ProjectDetail {
     let salary = jp
         .as_ref()
         .and_then(|j| j.base_salary.as_ref().and_then(salary_to_string));
+
+    // 프라이빗·협의 공고는 카드 DOM에 예산이 없고 baseSalary는 더미다 —
+    // 본문 예산 라인에서 실제 금액을 건진다. salary는 정보성 필드로만 남는다.
+    if card.budget.is_none() {
+        if let Some(d) = jp.as_ref().and_then(|j| j.description.as_deref()) {
+            card.budget = budget_from_description(d);
+        }
+    }
 
     ProjectDetail {
         card,
@@ -831,6 +857,48 @@ mod tests {
         let d = parse_detail("158089", html);
         assert_eq!(d.card.title, "AI 기반 문서 자동화 개발");
         assert_eq!(d.conditions.len(), 1);
+    }
+
+    #[test]
+    fn budget_from_description_range() {
+        use super::budget_from_description as bfd;
+        // 실측: "[오픈 시점과 예산]" 헤더 뒤 항목 줄의 범위 예산
+        let b = bfd("[오픈 시점과 예산]\r\n- 목표 시점: 10월 말 \r\n- 개발 기간: 약 2개월\r\n- 예산: 1,500만~2,500만원 (부가세 별도)");
+        assert_eq!(b.as_deref(), Some("예상 금액 15000000~25000000원"));
+        // 실측 오타(",15000만") — 역전 범위는 정렬
+        let b = bfd("- 예산: ,15000만~2,500만원 (부가세 별도)");
+        assert_eq!(b.as_deref(), Some("예상 금액 25000000~150000000원"));
+        // 단일 금액
+        let b = bfd("- 예산: 2,000만원");
+        assert_eq!(b.as_deref(), Some("예상 금액 20000000원"));
+        // 예산 라인이 없거나 금액이 없으면 None
+        assert_eq!(bfd("[예산]\r\n- 협의 후 결정"), None);
+        assert_eq!(bfd("예산 문의는 미팅에서"), None);
+        assert_eq!(bfd(""), None);
+    }
+
+    #[test]
+    fn detail_budget_comes_from_description_not_dummy_salary() {
+        // 프라이빗 공고: baseSalary에 더미 숫자가 오지만 본문 예산이 정답이다.
+        let html = r#"
+        <html><body>
+        <div class="project-detail-condition-row"><div>모집 마감일</div><div>2026년 09월 07일</div></div>
+        <script type="application/ld+json">
+        {"@context":"https://schema.org","@type":"JobPosting",
+         "title":"더미 예산 공고",
+         "description":"[오픈 시점과 예산]\r\n- 예산: 1,500만~2,000만원 (부가세 별도)",
+         "baseSalary":{"@type":"MonetaryAmount","currency":"KRW","value":{"value":9999999}}}
+        </script>
+        </body></html>"#;
+        let d = parse_detail("800004", html);
+        assert_eq!(d.salary.as_deref(), Some("9999999원"));
+        assert_eq!(
+            d.card.budget.as_deref(),
+            Some("예상 금액 15000000~20000000원")
+        );
+        // 수치 지표가 본문 예산에서 계산되는지
+        let m = budget_metrics(d.card.budget.as_deref(), d.card.duration.as_deref());
+        assert_eq!(m.total_won, Some((15_000_000, 20_000_000)));
     }
 
     #[test]

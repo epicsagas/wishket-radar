@@ -617,8 +617,10 @@ async fn fetch_inbox_detail(
         }
         e.url = Some(detail.card.url.clone());
         if e.budget.is_none() {
-            // 상세 페이지엔 카드 DOM이 없다 — JSON-LD baseSalary로 채운다
-            e.budget = detail.card.budget.clone().or_else(|| detail.salary.clone());
+            // 상세 페이지엔 카드 DOM이 없다 — parse_detail이 본문 예산 라인에서
+            // 이미 건져 온다. JSON-LD baseSalary는 더미(9999999원 등)가 섞여
+            // budget으로 쓰면 안 된다(정보성 필드로만 노출).
+            e.budget = detail.card.budget.clone();
         }
         if detail.card.duration.is_some() {
             e.duration = detail.card.duration.clone();
