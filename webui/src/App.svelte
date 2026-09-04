@@ -5,6 +5,7 @@
   import { getToken, setToken } from './api'
   import { themeFromDom, toggleTheme, type Theme } from './lib/theme'
   import TokenGate from './components/TokenGate.svelte'
+  import FloatingChat from './components/FloatingChat.svelte'
   import Dashboard from './pages/Dashboard.svelte'
   import Inbox from './pages/Inbox.svelte'
   import InboxDetail from './pages/InboxDetail.svelte'
@@ -13,6 +14,7 @@
   import Proposals from './pages/Proposals.svelte'
   import Profile from './pages/Profile.svelte'
   import Reports from './pages/Reports.svelte'
+  import Chats from './pages/Chats.svelte'
 
   let unauthorized = $state(false)
   let theme = $state<Theme>(typeof document === 'undefined' ? 'dark' : themeFromDom())
@@ -24,6 +26,7 @@
     '/proposals': { comp: Proposals, label: '제안서' },
     '/profile': { comp: Profile, label: '내 정보' },
     '/reports': { comp: Reports, label: '리포트' },
+    '/chats': { comp: Chats, label: 'AI 대화' },
   }
   const order = Object.keys(pages)
 
@@ -134,4 +137,6 @@
 
 {#if unauthorized}
   <TokenGate initial={getToken()} onToken={onTokenSubmitted} />
+{:else}
+  <FloatingChat />
 {/if}
