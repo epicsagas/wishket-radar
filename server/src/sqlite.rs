@@ -133,24 +133,30 @@ fn migrate_legacy(conn: &Connection, dir: &Path) -> Result<(), io::Error> {
     let yaml_path = dir.join("applications.yaml");
     if let Ok(raw) = std::fs::read_to_string(&yaml_path) {
         if let Ok(shim) = serde_yaml::from_str::<AppsShim>(&raw) {
-            let normalized: Vec<Value> = shim
-                .applications
-                .iter()
-                .map(|a| {
-                    let mut a = a.clone();
-                    a["id"] = Value::String(coerce_id(&a["id"]));
-                    a
-                })
-                .collect();
-            if !normalized.is_empty()
-                && normalized.iter().all(|a| {
-                    serde_json::from_value::<crate::dashboard::apps::Application>(a.clone()).is_ok()
-                })
-            {
-                for (i, a) in normalized.iter().enumerate() {
-                    upsert_application(conn, i, a)?;
+            // 모든 행이 객체여야 id 정규화가 가능하다(IndexMut은 비-객체에
+            // panic). 하나라도 객체가 아니면 파일 채로 보존 — 부분 흡수로
+            // 행을 조용히 버리지 않는다.
+            if shim.applications.iter().all(|a| a.is_object()) {
+                let normalized: Vec<Value> = shim
+                    .applications
+                    .iter()
+                    .map(|a| {
+                        let mut a = a.clone();
+                        a["id"] = Value::String(coerce_id(&a["id"]));
+                        a
+                    })
+                    .collect();
+                if !normalized.is_empty()
+                    && normalized.iter().all(|a| {
+                        serde_json::from_value::<crate::dashboard::apps::Application>(a.clone())
+                            .is_ok()
+                    })
+                {
+                    for (i, a) in normalized.iter().enumerate() {
+                        upsert_application(conn, i, a)?;
+                    }
+                    let _ = std::fs::rename(&yaml_path, dir.join("applications.yaml.migrated"));
                 }
-                let _ = std::fs::rename(&yaml_path, dir.join("applications.yaml.migrated"));
             }
         }
     }
@@ -637,13 +643,29 @@ mod tests {
     }
 
     #[test]
-    fn reset_removes_db_and_wal() {
+    fn reset_clears_seen_but_keeps_db() {
         let dir = tmpdir("reset");
         save_state(&dir, &State::default()).unwrap();
         assert!(present(&dir));
         reset(&dir).unwrap();
         assert!(present(&dir), "reset은 db 파일을 유지한다 (seen만 지움)");
         assert!(load_state(&dir).unwrap().seen.is_empty());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn non_object_application_row_blocks_migration_without_panic() {
+        // `- 5` 같은 비-객체 행 — IndexMut panic 대신 게이트 거부로 파일 보존.
+        let dir = tmpdir("scalar");
+        std::fs::write(
+            dir.join("applications.yaml"),
+            "applications:\n  - 5\n  - id: \"7\"\n    status: 미팅\n",
+        )
+        .unwrap();
+        let apps = load_applications(&dir).unwrap();
+        assert!(apps.is_empty(), "비-객체 행 포함 시 미흡수");
+        assert!(dir.join("applications.yaml").exists(), "원본 보존");
+        assert!(!dir.join("applications.yaml.migrated").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
