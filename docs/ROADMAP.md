@@ -6,12 +6,12 @@
 
 state.json 단일 파일의 한계(쓰기 경합, 부분 손상, 대화 히스토리 같은 관계형 데이터 부적합)를 해소한다.
 
-- [ ] **저장 계층 추상화** — `server/src/state.rs`의 read/write를 trait 뒤로. 현재 호출부(JSON 파일)는 유지하며 교체 지점을 만든다.
-- [ ] **SQLite 스키마** — `state.db` 단일 파일: `seen`(공고 캐시), `applications`(파이프라인), `conversations`/`messages`(v0.5 대화, 스키마 선반영), `settings`(BYOK 등). 마이그레이션은 `rusqlite` + `user_version` pragma.
-- [ ] **WAL 모드 활성화** — `PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL;`. 대시보드 3초 폴링과 쓰기가 겹쳐도 읽기 막힘 없음.
-- [ ] **자동 이관** — 첫 기동 시 `state.json`·`applications.yaml`·`profile.yaml`을 SQLite로 흡수하고 원본은 `*.migrated`로 보존(기존 matches.md 이관 선례 준용). 롤백 경로: 원본 파일 삭제 전까지만.
-- [ ] **백업 정책** — `.bak` 1세대 유지 + `VACUUM INTO` 주간 스냅샷.
-- [ ] **API 호환** — `/api/state` 등 기존 엔드포인트 응답 스키마 불변. webui 무수정으로 통과하는 것이 완료 기준.
+- [x] **저장 계층 추상화** — `server/src/state.rs`의 read/write를 trait 뒤로. 현재 호출부(JSON 파일)는 유지하며 교체 지점을 만든다.
+- [x] **SQLite 스키마** — `state.db` 단일 파일: `seen`(공고 캐시), `applications`(파이프라인), `conversations`/`messages`(v0.5 대화, 스키마 선반영), `settings`(BYOK 등). 마이그레이션은 `rusqlite` + `user_version` pragma.
+- [x] **WAL 모드 활성화** — `PRAGMA journal_mode=WAL; PRAGMA busy_timeout=5000; PRAGMA synchronous=NORMAL;`. 대시보드 3초 폴링과 쓰기가 겹쳐도 읽기 막힘 없음.
+- [x] **자동 이관** — 첫 기동 시 `state.json`·`applications.yaml`·`profile.yaml`을 SQLite로 흡수하고 원본은 `*.migrated`로 보존(기존 matches.md 이관 선례 준용). 롤백 경로: 원본 파일 삭제 전까지만.
+- [x] **백업 정책** — `.bak` 1세대 유지 + `VACUUM INTO` 주간 스냅샷.
+- [x] **API 호환** — `/api/state` 등 기존 엔드포인트 응답 스키마 불변. webui 무수정으로 통과하는 것이 완료 기준.
 
 수용 기준: 기존 state.json 기반 배포가 첫 기동만으로 이관되고, 테스트 전반이 SQLite 백엔드로 통과.
 
