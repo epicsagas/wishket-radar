@@ -206,7 +206,7 @@ npm --prefix webui run dev    # http://localhost:5173
 - robots.txt는 `/project/` 크롤링을 허용(사이트맵 제공)하되 `Crawl-delay: 5`를 요구한다. 서버는 검색·상세를 포함한 모든 HTTP 요청 사이에 5초를 둔다.
 - 요청 UA는 `wishket-radar/<버전> (+repo)`로 정체성을 밝힌다. 로그인·인증 우회 없이 공개 페이지만 조회하며, 회원 전용 영역(`/partners/`, `/media/` 등 robots.txt 비허용 경로)은 호출하지 않는다.
 - 비공식 API 기반이므로 위시켓 측 변경에 깨질 수 있다 (SSR 폴백 내장).
-- 과도한 스캔 금지. 수집 데이터는 seen 캐시(90일)와 로컬 리포트뿐이며 재배포하지 않는다.
+- 과도한 스캔 금지. 수집 데이터는 seen 캐시(90일)와 로컬 리포트뿐이며 재배포를 엄격히 금한다.
 
 ## 기여 (Contributing)
 
