@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-04
+
+### Added
+- **BYOK AI 설정** — 내 정보 탭에 "AI 설정" 섹션. 공급자(Anthropic/OpenAI/호환 엔드포인트), API 키, 모델, 온도를 SQLite `settings`(`ai_config`)에 저장. 키는 API 응답에서 마스킹(`sk-***xxxx`)되며, 마스킹 값이나 빈 키로 저장하면 기존 키가 보존된다.
+- **서버 AI 프록시** — `POST /api/ai/chat`: 키가 브라우저 JS에 닿지 않게 서버가 공급자 API를 호출하는 얇은 프록시. SSE 스트림을 원문 그대로 중계하면서 usage·어시스턴트 텍스트를 곁들여 수집. 공급자 무응답 120초·연결 10초 타임아웃, 429 등 오류는 상태코드+본문 그대로 전달. `base_url`은 게이트웨이 오버라이드로 모든 공급자에서 존중.
+- **AI 평가** — 인박스 상세·파이프라인 상세의 "AI 평가" 버튼. 캐시된 공고 본문+프로필로 `agents/wishket-analyst.md` 프롬프트(단일 소스)를 실행하고 5줄 출력을 파싱해 리포트 파서 포맷 그대로 `reports/ai-eval.md`에 기록. 기존 파서·배지 파이프라인 무수정 재사용, 재평가 시 뒤 항목이 이긴다.
+- **대화(컨텍스트) 연동** — `conversations`/`messages` 테이블 활성화. 대화 생성 시 공고 연결(project_id)하면 본문·조건·매칭+프로필이 시스템 컨텍스트로 주입되고 전체 메시지 배열이 공급자에 재전송된다. `POST /api/ai/conversations`, `GET /api/ai/conversations[/{id}]`.
+- **토큰 usage 누적** — `user_version=2` 이관으로 conversations에 `tokens_in`/`tokens_out` 추가(v1 db는 기동 시 자동 ALTER, 행 보존). 공급자 응답 usage(anthropic/openai 명칭 모두)를 대화별 누적, 대화 API로 노출. 화면 표시는 v0.6 채팅 UI와 함께.
+
+### Security
+- API 키는 로컬 SQLite에만 저장(파일 0600 선례), 응답 JSON·로그에 평문 재노출 없음. 외부 전송은 사용자가 지정한 공급자 API 호출뿐.
+
 ## [0.4.0] - 2026-09-04
 
 ### Added

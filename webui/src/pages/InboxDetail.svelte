@@ -42,6 +42,27 @@
   let fetching = $state(false)
   let busy = $state(false)
 
+  // AI 평가 (BYOK) — 결과는 reports/ai-eval.md로 저장되어 analysis로 재로딩된다
+  let aiBusy = $state(false)
+  let aiError = $state('')
+
+  async function runAiEval() {
+    aiBusy = true
+    aiError = ''
+    try {
+      await api(`/api/ai/evaluate`, {
+        method: 'POST',
+        body: JSON.stringify({ id }),
+      })
+      item = await api<Item>(`/api/inbox/${encodeURIComponent(id)}`)
+      await refresh()
+    } catch (e) {
+      aiError = String(e)
+    } finally {
+      aiBusy = false
+    }
+  }
+
   const d = $derived(
     item?.deadline && $appState ? dday($appState.today, item.deadline) : null,
   )
@@ -169,6 +190,9 @@
         <h2>
           스카우트 분석
           <span class="dim srcnote">{item.analysis.report}</span>
+          <button class="ghost mini" style="margin-left: auto" onclick={runAiEval} disabled={aiBusy || !hasDetail}>
+            {aiBusy ? '평가 중…' : 'AI 재평가'}
+          </button>
         </h2>
         <dl class="cond">
           {#if item.analysis.fit}<dt>적합도</dt><dd>{item.analysis.fit}</dd>{/if}
@@ -176,7 +200,17 @@
           {#if item.analysis.proposal}<dt>제안 방향</dt><dd>{item.analysis.proposal}</dd>{/if}
         </dl>
         <hr />
+      {:else if hasDetail}
+        <div class="aieval">
+          <p class="dim" style="margin: 0 0 0.6rem">
+            AI 분석가가 공고 본문과 기술 프로필을 대조해 등급(A/B/C)과 제안 방향을 5줄로 냅니다.
+          </p>
+          <button onclick={runAiEval} disabled={aiBusy}>
+            {aiBusy ? '평가 중…' : 'AI 평가'}
+          </button>
+        </div>
       {/if}
+      {#if aiError}<div class="banner err">{aiError}</div>{/if}
       {#if !hasDetail}
         <div class="empty">
           <strong>공고 상세를 아직 불러오지 않았습니다</strong>
@@ -223,6 +257,9 @@
   .matched { display: block; }
   .matched .badge { margin: 0 0.25rem 0.25rem 0; }
   .body { padding: 1rem 1.15rem 1.3rem; }
+  .body h2 { display: flex; align-items: center; }
+  .mini { padding: 0.2rem 0.45rem; font-size: 0.72rem; }
+  .aieval { display: flex; flex-direction: column; align-items: flex-start; gap: 0.2rem; }
   .bodyhead {
     display: flex; align-items: center; justify-content: space-between;
     gap: 0.6rem; margin-bottom: 0.9rem; padding-bottom: 0.7rem;

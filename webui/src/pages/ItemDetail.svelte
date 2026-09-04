@@ -11,6 +11,26 @@
   let fetching = $state(false)
   let noteDraft = $state<string | null>(null)
 
+  // AI 평가 (BYOK) — reports/ai-eval.md에 기록되고 analyses로 재로딩된다
+  let aiBusy = $state(false)
+  let aiError = $state('')
+
+  async function runAiEval() {
+    aiBusy = true
+    aiError = ''
+    try {
+      await api(`/api/ai/evaluate`, {
+        method: 'POST',
+        body: JSON.stringify({ id }),
+      })
+      await refresh()
+    } catch (e) {
+      aiError = String(e)
+    } finally {
+      aiBusy = false
+    }
+  }
+
   /// 공고 본문이 캐시에 없을 때 여기서 바로 불러온다.
   /// (인박스를 거치지 않고 들어온 항목은 캐시가 비어 있다)
   async function fetchDetail() {
@@ -154,6 +174,27 @@
         <div class="matched">
           <div class="dim" style="font-size: 0.72rem; margin: 0.9rem 0 0.3rem">매칭된 기술</div>
           {#each cached.matched as m}<span class="badge good">{m}</span>{/each}
+        </div>
+      {/if}
+
+      {#if $appState}
+        {@const an = $appState.analyses?.[id]}
+        <div class="aieval">
+          {#if an}
+            <div class="dim" style="font-size: 0.72rem; margin: 0.9rem 0 0.3rem">
+              AI 평가 {#if an.grade}<span class="badge {gradeTone(an.grade)}">{an.grade}</span>{/if}
+              {#if an.score != null}· {an.score}점{/if}
+              {#if an.model}· {an.model}{/if}
+            </div>
+            {#if an.fit}<p>{an.fit}</p>{/if}
+            {#if an.caution}<p class="warn">{an.caution}</p>{/if}
+            {#if an.proposal}<p>{an.proposal}</p>{/if}
+          {/if}
+          <button style="margin-top: 0.7rem" onclick={runAiEval} disabled={aiBusy || !cached}>
+            {aiBusy ? '평가 중…' : an ? 'AI 재평가' : 'AI 평가'}
+          </button>
+          {#if !cached}<span class="dim hint">상세를 불러온 뒤 평가할 수 있습니다</span>{/if}
+          {#if aiError}<div class="banner err" style="margin-top: 0.5rem">{aiError}</div>{/if}
         </div>
       {/if}
     </div>

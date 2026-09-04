@@ -1,7 +1,7 @@
 [package]
 repository = "https://github.com/epicsagas/wishket-radar"
 name = "wishket-mcp"
-version = "0.4.0"
+version = "0.5.0"
 edition = "2021"
 description = "Wishket project search/analysis MCP server"
 
@@ -13,7 +13,8 @@ rust-embed = { version = "8", features = ["interpolate-folder-path"] }
 webbrowser = "0.8"
 rand = "0.9"
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
-reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "query"] }
+reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "query", "stream"] }
+futures-util = { version = "0.3", default-features = false }
 scraper = "0.27"
 lz-str = "0.2"
 serde = { version = "1", features = ["derive"] }

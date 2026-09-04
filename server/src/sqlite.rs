@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 
 use rusqlite::Connection;
 use serde::Deserialize;
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::state::{SeenEntry, State};
 
@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
--- v0.5 대화용 선반영 (아직 소비자 없음)
+-- v0.5 대화. usage 누적 컬럼(tokens_in/out)은 migrate_schema()가 붙인다 —
+-- v1 db와 동일한 base 스키마를 유지해 이관 경로를 하나로.
 CREATE TABLE IF NOT EXISTS conversations (
     id INTEGER PRIMARY KEY,
     project_id TEXT,
@@ -82,16 +83,38 @@ fn open_ready(dir: &Path) -> Result<Connection, io::Error> {
 pub fn ensure(dir: &Path) -> Result<(), io::Error> {
     std::fs::create_dir_all(dir)?;
     if present(dir) {
+        migrate_schema(dir);
         weekly_snapshot(dir);
         return Ok(());
     }
     let conn = open(dir)?;
-    conn.execute_batch("PRAGMA user_version = 1;")
-        .map_err(io_err)?;
+    migrate_schema(dir);
     migrate_legacy(&conn, dir)?;
     restrict_perms(dir);
     weekly_snapshot(dir);
     Ok(())
+}
+
+/// 스키마 버전 이관. 생성 분기와 기존 db 분기가 같은 경로를 탄다 —
+/// fresh db는 user_version 0 → ALTER(멱등) → 2, v1 db는 1 → 2.
+fn migrate_schema(dir: &Path) {
+    let Ok(conn) = open(dir) else { return };
+    let ver: i64 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap_or(0);
+    if ver >= 2 {
+        return;
+    }
+    // v0.5: 대화별 토큰 usage 누적. 동시 기동 경합으로 컬럼이 이미
+    // 있으면 duplicate column 에러 — 무시해도 목표 상태에 도달한다.
+    for col in ["tokens_in", "tokens_out"] {
+        let _ = conn.execute(
+            &format!("ALTER TABLE conversations ADD COLUMN {col} INTEGER NOT NULL DEFAULT 0"),
+            [],
+        );
+    }
+    // open마다 쓰지 않고 이관 시에만 — 불필요한 쓰기 잠금 방지 (v0.4 주석 준용).
+    let _ = conn.execute_batch("PRAGMA user_version = 2;");
 }
 
 /// db 파일을 토큰 파일 선례(dashboard/mod.rs)에 맞춰 0600으로. 실패는 무시.
@@ -314,6 +337,135 @@ pub fn profile_db_backed(dir: &Path) -> bool {
         .is_some()
 }
 
+// --- 범용 settings + 대화 DAO (v0.5 BYOK·AI) -------------------------------
+
+pub fn load_setting(dir: &Path, key: &str) -> Option<String> {
+    let conn = open_ready(dir).ok()?;
+    get_setting(&conn, key)
+}
+
+pub fn save_setting(dir: &Path, key: &str, value: &str) -> Result<(), io::Error> {
+    let conn = open_ready(dir)?;
+    set_setting(&conn, key, value)
+}
+
+pub fn create_conversation(
+    dir: &Path,
+    project_id: Option<&str>,
+    title: &str,
+) -> Result<i64, io::Error> {
+    let conn = open_ready(dir)?;
+    conn.execute(
+        "INSERT INTO conversations (project_id, title, created_at) VALUES (?1, ?2, ?3)",
+        rusqlite::params![project_id, title, crate::state::now_iso()],
+    )
+    .map_err(io_err)?;
+    Ok(conn.last_insert_rowid())
+}
+
+/// 대화 목록 (최신 먼저) — usage 누적·메시지 수 포함.
+pub fn list_conversations(dir: &Path) -> Result<Vec<Value>, io::Error> {
+    let conn = open_ready(dir)?;
+    let mut stmt = conn
+        .prepare(
+            "SELECT c.id, c.project_id, c.title, c.created_at, c.tokens_in, c.tokens_out,
+                    (SELECT COUNT(*) FROM messages m WHERE m.conversation_id = c.id)
+             FROM conversations c ORDER BY c.id DESC",
+        )
+        .map_err(io_err)?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(json!({
+                "id": r.get::<_, i64>(0)?,
+                "project_id": r.get::<_, Option<String>>(1)?,
+                "title": r.get::<_, String>(2)?,
+                "created_at": r.get::<_, String>(3)?,
+                "tokens_in": r.get::<_, i64>(4)?,
+                "tokens_out": r.get::<_, i64>(5)?,
+                "messages": r.get::<_, i64>(6)?,
+            }))
+        })
+        .map_err(io_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(io_err)?;
+    Ok(rows)
+}
+
+/// 대화 헤더 + 메시지 배열. 없는 id면 None.
+pub fn get_conversation(dir: &Path, id: i64) -> Result<Option<Value>, io::Error> {
+    let conn = open_ready(dir)?;
+    let mut header = match conn.query_row(
+        "SELECT id, project_id, title, created_at, tokens_in, tokens_out
+         FROM conversations WHERE id = ?1",
+        [id],
+        |r| {
+            Ok(json!({
+                "id": r.get::<_, i64>(0)?,
+                "project_id": r.get::<_, Option<String>>(1)?,
+                "title": r.get::<_, String>(2)?,
+                "created_at": r.get::<_, String>(3)?,
+                "tokens_in": r.get::<_, i64>(4)?,
+                "tokens_out": r.get::<_, i64>(5)?,
+            }))
+        },
+    ) {
+        Ok(v) => v,
+        Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
+        Err(e) => return Err(io_err(e)),
+    };
+    let mut stmt = conn
+        .prepare(
+            "SELECT role, content, created_at FROM messages
+             WHERE conversation_id = ?1 ORDER BY id",
+        )
+        .map_err(io_err)?;
+    let msgs = stmt
+        .query_map([id], |r| {
+            Ok(json!({
+                "role": r.get::<_, String>(0)?,
+                "content": r.get::<_, String>(1)?,
+                "created_at": r.get::<_, String>(2)?,
+            }))
+        })
+        .map_err(io_err)?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(io_err)?;
+    header["messages"] = Value::Array(msgs);
+    Ok(Some(header))
+}
+
+pub fn append_message(
+    dir: &Path,
+    conversation_id: i64,
+    role: &str,
+    content: &str,
+) -> Result<(), io::Error> {
+    let conn = open_ready(dir)?;
+    conn.execute(
+        "INSERT INTO messages (conversation_id, role, content, created_at) VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![conversation_id, role, content, crate::state::now_iso()],
+    )
+    .map_err(io_err)?;
+    Ok(())
+}
+
+/// 공급자 응답 usage 필드의 대화별 누적.
+pub fn add_usage(
+    dir: &Path,
+    conversation_id: i64,
+    tokens_in: u64,
+    tokens_out: u64,
+) -> Result<(), io::Error> {
+    let conn = open_ready(dir)?;
+    conn.execute(
+        "UPDATE conversations SET tokens_in = tokens_in + ?1, tokens_out = tokens_out + ?2
+         WHERE id = ?3",
+        rusqlite::params![tokens_in as i64, tokens_out as i64, conversation_id],
+    )
+    .map_err(io_err)?;
+    Ok(())
+}
+
 /// 주간 스냅샷: 최신 backups/state-*.db가 7일 경과 시 VACUUM INTO, 4세대 유지.
 /// 실패는 무시한다 — 스냅샷 실패가 앱을 막으면 본말전도.
 fn weekly_snapshot(dir: &Path) {
@@ -440,7 +592,7 @@ mod tests {
         let ver: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(ver, 1);
+        assert_eq!(ver, 2, "fresh db도 migrate_schema 경로로 v2까지 간다");
         // conversations/messages 선반영 확인
         conn.execute(
             "INSERT INTO conversations (project_id, title, created_at) VALUES ('1', 't', 'now')",
@@ -666,6 +818,79 @@ mod tests {
         assert!(apps.is_empty(), "비-객체 행 포함 시 미흡수");
         assert!(dir.join("applications.yaml").exists(), "원본 보존");
         assert!(!dir.join("applications.yaml.migrated").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn v1_db_gains_usage_columns_keeping_rows() {
+        // v1 모양 db(usage 컬럼 없음)를 만들고 ensure() → v2 이관, 기존 행 보존.
+        let dir = tmpdir("v2migrate");
+        {
+            let conn = Connection::open(dir.join("state.db")).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE conversations (
+                    id INTEGER PRIMARY KEY,
+                    project_id TEXT,
+                    title TEXT NOT NULL DEFAULT '',
+                    created_at TEXT NOT NULL
+                );
+                INSERT INTO conversations (project_id, title, created_at)
+                VALUES ('7', '옛 대화', '2026-09-01');
+                PRAGMA user_version = 1;",
+            )
+            .unwrap();
+        }
+        ensure(&dir).unwrap();
+        let list = list_conversations(&dir).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0]["title"], "옛 대화");
+        assert_eq!(list[0]["tokens_in"], 0, "이관 행의 usage 기본값");
+        let ver: i64 = {
+            let conn = open(&dir).unwrap();
+            conn.query_row("PRAGMA user_version", [], |r| r.get(0))
+                .unwrap()
+        };
+        assert_eq!(ver, 2);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn setting_roundtrip() {
+        let dir = tmpdir("setting");
+        assert_eq!(load_setting(&dir, "ai_config"), None);
+        save_setting(&dir, "ai_config", "{\"model\":\"m\"}").unwrap();
+        assert_eq!(
+            load_setting(&dir, "ai_config").as_deref(),
+            Some("{\"model\":\"m\"}")
+        );
+        save_setting(&dir, "ai_config", "{\"model\":\"m2\"}").unwrap();
+        assert_eq!(
+            load_setting(&dir, "ai_config").as_deref(),
+            Some("{\"model\":\"m2\"}")
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn conversation_dao_and_usage_accumulation() {
+        let dir = tmpdir("conv");
+        let id = create_conversation(&dir, Some("158063"), "테스트 대화").unwrap();
+        append_message(&dir, id, "user", "이 공고 어때?").unwrap();
+        append_message(&dir, id, "assistant", "핵심 스택이 일치합니다.").unwrap();
+        add_usage(&dir, id, 100, 50).unwrap();
+        add_usage(&dir, id, 30, 20).unwrap();
+
+        let got = get_conversation(&dir, id).unwrap().unwrap();
+        assert_eq!(got["project_id"], "158063");
+        assert_eq!(got["messages"].as_array().unwrap().len(), 2);
+        assert_eq!(got["messages"][0]["role"], "user");
+        assert_eq!(got["tokens_in"], 130, "usage는 누적");
+        assert_eq!(got["tokens_out"], 70);
+
+        let list = list_conversations(&dir).unwrap();
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0]["messages"], 2);
+        assert!(get_conversation(&dir, 999).unwrap().is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
