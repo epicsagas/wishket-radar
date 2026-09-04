@@ -53,10 +53,15 @@ struct AiConfig {
 
 impl AiConfig {
     fn validate(&self) -> Result<(), String> {
+        let scheme_ok = |u: Option<&str>| {
+            u.is_some_and(|u| u.starts_with("http://") || u.starts_with("https://"))
+        };
         match self.provider.as_str() {
             "anthropic" | "openai" => Ok(()),
-            "compatible" if self.base_url.as_deref().unwrap_or("").starts_with("http") => Ok(()),
-            "compatible" => Err("compatible 공급자에는 base_url이 필요합니다".into()),
+            // base_url은 사용자가 정한다(BYOK) — 키가 그곳으로 전송되므로
+            // 스킴만 강제한다. httpfoo:// 같은 오타도 여기서 걸린다.
+            "compatible" if scheme_ok(self.base_url.as_deref()) => Ok(()),
+            "compatible" => Err("compatible 공급자에는 http(s) base_url이 필요합니다".into()),
             _ => Err("provider는 anthropic|openai|compatible 중 하나".into()),
         }
     }
@@ -153,6 +158,8 @@ async fn get_settings_ai(State(app): ApiState) -> Result<Json<Value>, ApiError> 
 }
 
 /// 키 미수신(또는 마스킹 값 수신) 시 기존 키 보존 — 마스킹 값 저장 방지.
+/// UI는 저장 후 키 칸을 비우므로 빈 문자열도 "유지"로 본다 — 아니면 모델만
+/// 바꾼 저장이 키를 조용히 지워버린다.
 async fn put_settings_ai(
     State(app): ApiState,
     Json(body): Json<Value>,
@@ -160,7 +167,7 @@ async fn put_settings_ai(
     let existing = load_config(&app.state_dir);
     let key_in = body.get("api_key").and_then(Value::as_str);
     let api_key = match key_in {
-        Some(k) if !k.contains("***") => k.to_string(),
+        Some(k) if !k.contains("***") && !k.trim().is_empty() => k.trim().to_string(),
         _ => existing
             .as_ref()
             .map(|c| c.api_key.clone())
@@ -202,7 +209,9 @@ async fn put_settings_ai(
         serde_json::to_string(&cfg).map_err(|e| err(StatusCode::BAD_REQUEST, e.to_string()))?;
     sqlite::save_setting(&app.state_dir, SETTINGS_KEY, &raw)
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    Ok(Json(public_config(&cfg)))
+    let mut public = public_config(&cfg);
+    public["configured"] = json!(true);
+    Ok(Json(public))
 }
 
 // ---------------------------------------------------------------------------
@@ -377,6 +386,8 @@ async fn relay_stream(
     let mut text = String::new();
     let mut line_buf: Vec<u8> = Vec::new();
     let mut stream = resp.bytes_stream();
+    // 어느 경로로 끝나든(정상·클라이언트 끊김·공급자 오류·타임아웃) 이미
+    // 청구된 토큰과 부분 텍스트는 영속한다 — 끊겼다고 버리면 유료 응답 소실.
     while let Some(chunk) = stream.next().await {
         match chunk {
             Ok(b) => {
@@ -390,18 +401,22 @@ async fn relay_stream(
                     }
                 }
                 if tx.send(Ok(b)).await.is_err() {
-                    return; // 클라이언트 끊김
+                    break; // 클라이언트 끊김
                 }
             }
             Err(e) => {
                 let _ = tx
                     .send(Err(io::Error::other(format!("공급자 스트림 오류: {e}"))))
                     .await;
-                return;
+                break;
             }
         }
     }
-    // 스트림 정상 종료 시에만 영속 — 중간 끊김은 부분만 남는다.
+    // 개행 없이 끝난 마지막 프레임(usage 등)도 수집
+    if !line_buf.is_empty() {
+        let line = String::from_utf8_lossy(&line_buf).to_string();
+        harvest_line(&line, &mut usage, &mut text);
+    }
     let _ = sqlite::add_usage(&dir, conversation_id, usage.0, usage.1);
     if !text.is_empty() {
         let _ = sqlite::append_message(&dir, conversation_id, "assistant", &text);
@@ -589,6 +604,25 @@ async fn evaluate(
 /// 대화용 시스템 프롬프트 — 공고 컨텍스트는 있을 때 덧붙인다.
 const CHAT_SYSTEM: &str = "당신은 위시켓 외주 공고 분석 도우미입니다. 주어진 공고 컨텍스트와 기술 프로필에 근거해서만 답하고, 근거가 없으면 \"공고에 명시 없음\"이라고 답합니다. 한국어로 답합니다.";
 
+/// 공급자에 재전송할 최대 메시지 수 (20턴).
+const MAX_HISTORY: usize = 40;
+
+/// 연속 same-role 메시지를 하나로 합친다. 고아 user 턴(공급자 실패·중단
+/// 스트림)이 [user,user] 배열을 만들면 공급자가 400으로 거부한다.
+fn merge_consecutive(history: &mut Vec<(String, String)>) {
+    let mut merged: Vec<(String, String)> = Vec::with_capacity(history.len());
+    for (role, content) in history.drain(..) {
+        match merged.last_mut() {
+            Some((r, c)) if *r == role => {
+                c.push_str("\n\n");
+                c.push_str(&content);
+            }
+            _ => merged.push((role, content)),
+        }
+    }
+    *history = merged;
+}
+
 #[derive(Deserialize)]
 struct ChatBody {
     message: String,
@@ -666,6 +700,12 @@ async fn chat(State(app): ApiState, Json(body): Json<ChatBody>) -> Result<Respon
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let mut history = history;
     history.push(("user".into(), body.message.clone()));
+    // 고아 user 턴(공급자 실패로 응답 없는 턴)이 남아 있으면 [user,user]가
+    // 되어 공급자가 400으로 거부한다 — 연속 same-role은 병합해 교대를 보장.
+    merge_consecutive(&mut history);
+    // 긴 대화의 context-length 폭발 방지 — 최근 40개만.
+    let skip = history.len().saturating_sub(MAX_HISTORY);
+    history.drain(..skip);
 
     let resp = provider_request(&cfg, &system, &history, true)
         .send()
@@ -806,10 +846,33 @@ mod tests {
         let _ = tokio::runtime::Runtime::new()
             .unwrap()
             .block_on(put_settings_ai(State(app(dir.clone())), Json(body)));
+        // 빈 키로 재저장(UI가 저장 후 키 칸을 비움) — 역시 보존
+        let body = json!({"provider": "anthropic", "model": "m3", "api_key": ""});
+        let _ = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(put_settings_ai(State(app(dir.clone())), Json(body)));
         let stored = load_config(&dir).unwrap();
         assert_eq!(stored.api_key, "sk-ant-real-9999");
-        assert_eq!(stored.model, "m2");
+        assert_eq!(stored.model, "m3");
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn merge_consecutive_repairs_orphan_user_turns() {
+        // 공급자 실패로 응답 없는 턴이 남으면 [user,user]가 되고 공급자는
+        // 400으로 거부한다 — 병합해 교대를 보장한다.
+        let mut history = vec![
+            ("user".into(), "첫 질문".into()),
+            ("user".into(), "고아 턴".into()),
+            ("assistant".into(), "답".into()),
+            ("user".into(), "후속".into()),
+        ];
+        merge_consecutive(&mut history);
+        assert_eq!(history.len(), 3);
+        assert_eq!(history[0].0, "user");
+        assert_eq!(history[0].1, "첫 질문\n\n고아 턴");
+        assert_eq!(history[1].0, "assistant");
+        assert_eq!(history[2].1, "후속");
     }
 
     #[test]

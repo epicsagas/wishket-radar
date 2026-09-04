@@ -116,6 +116,19 @@ fn migrate_schema(dir: &Path) {
             [],
         );
     }
+    // 실제로 두 컬럼이 존재할 때만 버전을 올린다. ALTER 실패(디스크·
+    // busy_timeout 초과)를 삼키고 버전만 찍으면 재시도가 영구히 생략되고
+    // conversations 쿼리가 전부 "no such column"으로 깨진다.
+    let cols: Vec<String> = conn
+        .prepare("PRAGMA table_info(conversations)")
+        .and_then(|mut s| {
+            s.query_map([], |r| r.get::<_, String>(1))
+                .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        })
+        .unwrap_or_default();
+    if !cols.iter().any(|c| c == "tokens_in") || !cols.iter().any(|c| c == "tokens_out") {
+        return;
+    }
     // open마다 쓰지 않고 이관 시에만 — 불필요한 쓰기 잠금 방지 (v0.4 주석 준용).
     let _ = conn.execute_batch("PRAGMA user_version = 2;");
 }

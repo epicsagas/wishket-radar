@@ -33,12 +33,17 @@ fn today() -> String {
 fn render_markdown(src: &str) -> String {
     // v0.5부터 비신뢰 내용이 흐른다 — 공고 본문(3자 작성)이 모델 출력 경유로
     // 리포트에 들어온다. 예전 "전부 본인 파일" 전제는 깨졌고, 예정대로
-    // ammonia를 붙인다. raw HTML·onerror·javascript: 링크는 제거된다.
+    // ammonia를 붙인다. img는 태그 자체를 뺀다 — 원격 <img>는 남으면
+    // 공격자 비콘(조회 추적)이 된다. script·onerror·javascript: 링크도 제거.
     let mut opts = Options::empty();
     opts.insert(Options::ENABLE_TABLES);
     let mut out = String::new();
     html::push_html(&mut out, Parser::new_ext(src, opts));
-    let out = ammonia::clean(&out);
+    let mut cleaner = ammonia::Builder::default();
+    cleaner.rm_tags(["img"]);
+    // rel은 아래 치환에서 넣는다 — ammonia 기본 link_rel과 이중 주입 방지.
+    cleaner.link_rel(None);
+    let out = cleaner.clean(&out).to_string();
     // 렌더된 본문의 외부 링크는 전부 새 탭으로. 대시보드가 SPA라 같은 탭
     // 이동은 상태를 날린다.
     out.replace(
@@ -812,6 +817,11 @@ mod tests {
         let html = render_markdown("[위시켓](https://www.wishket.com/project/1/)");
         assert!(html.contains("target=\"_blank\""), "{html}");
         assert!(html.contains("rel=\"noopener noreferrer\""), "{html}");
+        assert_eq!(
+            html.matches("rel=").count(),
+            1,
+            "ammonia link_rel과 이중 주입 금지: {html}"
+        );
     }
 
     #[test]
@@ -827,10 +837,7 @@ mod tests {
         // 심은 스크립트가 리포트 뷰에서 실행되면 토큰 탈취로 이어진다.
         let html = render_markdown("주의: <img src=x onerror=alert(1)> 마감 임박");
         assert!(!html.contains("onerror"), "{html}");
-        assert!(
-            !html.contains("<img src=\"javascript:") && !html.contains("alert"),
-            "{html}"
-        );
+        assert!(!html.contains("<img"), "원격 img 비콘 차단: {html}");
         let html = render_markdown("[눌러봐](javascript:fetch('/x'))");
         assert!(!html.to_lowercase().contains("javascript:"), "{html}");
         let html = render_markdown("<script>steal()</script>본문");
