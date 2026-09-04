@@ -14,7 +14,7 @@ pub fn migrate_legacy_file(dir: &std::path::Path, today: &str) -> usize {
     let Ok(md) = std::fs::read_to_string(&path) else {
         return 0;
     };
-    let mut st = crate::state::load();
+    let mut st = crate::state::load_in(dir);
     let mut moved = 0;
     for line in md.lines() {
         let t = line.trim();
@@ -51,7 +51,7 @@ pub fn migrate_legacy_file(dir: &std::path::Path, today: &str) -> usize {
             moved += 1;
         }
     }
-    if moved > 0 && crate::state::save(&st).is_ok() {
+    if moved > 0 && crate::state::save_in(dir, &st).is_ok() {
         let _ = std::fs::rename(&path, dir.join("matches.md.migrated"));
     }
     moved
@@ -152,6 +152,7 @@ mod tests {
 
     #[test]
     fn legacy_migration_moves_rows_to_interested() {
+        let _guard = crate::state::env_lock();
         let dir = std::env::temp_dir().join(format!("wk-mig-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();

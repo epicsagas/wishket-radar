@@ -152,8 +152,8 @@ fn read_text(path: &std::path::Path) -> Option<String> {
 /// GET /api/state — 대시보드 집계 뷰.
 async fn get_state(State(app): ApiState) -> Result<Json<Value>, ApiError> {
     let dir = &app.state_dir;
-    let mut scan = state::load();
-    let profile_summary = read_text(&dir.join("profile.yaml")).and_then(|raw| {
+    let mut scan = state::load_in(dir);
+    let profile_summary = state::load_profile_yaml(dir).and_then(|raw| {
         serde_yaml::from_str::<Profile>(&raw)
             .ok()
             .map(|p| {
@@ -185,7 +185,7 @@ async fn get_state(State(app): ApiState) -> Result<Json<Value>, ApiError> {
             healed |= e.recompute_budget();
         }
         if healed {
-            let _ = state::save(&scan);
+            let _ = state::save_in(dir, &scan);
         }
     }
     // 파이프라인(yaml)에 이미 들어간 공고 id — merge로 소유권이 옮겨지기 전에 뽑는다
@@ -262,7 +262,7 @@ async fn get_state(State(app): ApiState) -> Result<Json<Value>, ApiError> {
 
 /// GET /api/profile — 원문 + 파싱된 구조. 구조가 있으면 UI가 폼으로 편집한다.
 async fn get_profile(State(app): ApiState) -> Json<Value> {
-    let content = read_text(&app.state_dir.join("profile.yaml"));
+    let content = state::load_profile_yaml(&app.state_dir);
     let parsed = content
         .as_deref()
         .and_then(|c| serde_yaml::from_str::<Profile>(c).ok());
@@ -302,7 +302,7 @@ async fn put_profile_structured(
          # 대시보드 프로필 화면에서 편집됨. weight: 상대적 중요도(1~5).\n\
          # score = 100 * 매칭 weight 합 / 전체 weight 합.\n\n{yaml}"
     );
-    fsutil::atomic_write(&app.state_dir.join("profile.yaml"), body.as_bytes())
+    state::save_profile_yaml(&app.state_dir, &body)
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(json!({"ok": true})))
 }
@@ -324,14 +324,14 @@ async fn put_profile(
             "skills가 비어 있음 — 프로필 전체 삭제로 판단해 거절",
         ));
     }
-    fsutil::atomic_write(&app.state_dir.join("profile.yaml"), content.as_bytes())
+    state::save_profile_yaml(&app.state_dir, content)
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(json!({"ok": true})))
 }
 
 async fn get_applications(State(app): ApiState) -> Json<Value> {
     let loaded = apps::load(&app.state_dir);
-    let scan = state::load();
+    let scan = state::load_in(&app.state_dir);
     let applications = matches::merge(loaded.file.applications, matches::interested(&scan.seen));
     Json(json!({
         "applications": applications,
@@ -349,7 +349,7 @@ async fn patch_application(
     // matches.md에만 있는 항목을 수정하면 그 시점에 applications.yaml로 승격한다
     // (UI에서 상태를 바꿨는데 저장할 곳이 없어 404 나는 걸 막는 근본 처리)
     if !loaded.file.applications.iter().any(|a| a.id == id) {
-        let scan = state::load();
+        let scan = state::load_in(&app.state_dir);
         let promoted = matches::interested(&scan.seen)
             .into_iter()
             .find(|a| a.id == id)
@@ -491,7 +491,7 @@ fn inbox_visible(
 
 /// GET /api/inbox — 아직 트리아지하지 않은 스캔 결과 (최신 발견순).
 async fn get_inbox(State(app): ApiState) -> Json<Value> {
-    let scan = state::load();
+    let scan = state::load_in(&app.state_dir);
     let today_s = today();
     let analyses = reports::load_all(&app.state_dir.join("reports"));
     let pipeline_ids: std::collections::HashSet<String> = apps::load(&app.state_dir)
@@ -600,7 +600,7 @@ async fn fetch_inbox_detail(
         .clone()
         .or_else(|| cond("모집 마감").as_deref().and_then(parse_korean_date));
 
-    let mut scan = state::load();
+    let mut scan = state::load_in(&app.state_dir);
     if let Some(e) = scan.seen.get_mut(&id) {
         // 제목은 스캔 카드가 준 값이 정규 소스 — 상세 페이지(특히 비공개·마감)는
         // 실제 제목 DOM이 없어 사이트 태그라인이 넘어올 수 있어 덮지 않는다.
@@ -665,7 +665,8 @@ async fn fetch_inbox_detail(
         e.detail_fetched_at = Some(state::now_iso());
         // 원문(예산·기간)이 갱신됐으니 수치 지표도 다시 계산해 기록
         e.recompute_budget();
-        state::save(&scan).map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        state::save_in(&app.state_dir, &scan)
+            .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     }
 
     Ok(Json(json!({
@@ -691,7 +692,7 @@ async fn get_inbox_item(
     State(app): ApiState,
     Path(id): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    let scan = state::load();
+    let scan = state::load_in(&app.state_dir);
     let e = scan
         .seen
         .get(&id)
@@ -723,6 +724,7 @@ async fn get_inbox_item(
 
 /// POST /api/inbox/{id}/triage — {action: "interested"|"skipped"|"reset"}
 async fn triage_inbox(
+    State(app): ApiState,
     Path(id): Path<String>,
     Json(body): Json<Value>,
 ) -> Result<Json<Value>, ApiError> {
@@ -741,14 +743,15 @@ async fn triage_inbox(
             ))
         }
     };
-    let mut scan = state::load();
+    let mut scan = state::load_in(&app.state_dir);
     let entry = scan
         .seen
         .get_mut(&id)
         .ok_or_else(|| err(StatusCode::NOT_FOUND, format!("unknown id: {id}")))?;
     entry.triage = triage;
     entry.triaged_at = triage.map(|_| today());
-    state::save(&scan).map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    state::save_in(&app.state_dir, &scan)
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     Ok(Json(json!({"ok": true})))
 }
 
