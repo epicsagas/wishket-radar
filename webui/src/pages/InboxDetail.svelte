@@ -118,6 +118,9 @@
     <h1>{item?.title ?? id}</h1>
   </div>
   <div class="row">
+    <button class="ghost" onclick={() => go(`/chats?project=${id}`)} title="이 공고를 맥락으로 AI와 대화">
+      AI 대화
+    </button>
     {#if item?.analysis?.grade}
       <span class="badge {gradeTone(item.analysis.grade)}">적합도 {item.analysis.grade}</span>
     {/if}

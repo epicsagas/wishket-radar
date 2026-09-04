@@ -190,9 +190,14 @@
             {#if an.caution}<p class="warn">{an.caution}</p>{/if}
             {#if an.proposal}<p>{an.proposal}</p>{/if}
           {/if}
-          <button style="margin-top: 0.7rem" onclick={runAiEval} disabled={aiBusy || !cached}>
-            {aiBusy ? '평가 중…' : an ? 'AI 재평가' : 'AI 평가'}
-          </button>
+          <span class="aibtns">
+            <button style="margin-top: 0.7rem" onclick={runAiEval} disabled={aiBusy || !cached}>
+              {aiBusy ? '평가 중…' : an ? 'AI 재평가' : 'AI 평가'}
+            </button>
+            <button class="ghost" style="margin-top: 0.7rem" onclick={() => go(`/chats?project=${id}`)} title="이 공고를 맥락으로 AI와 대화">
+              AI 대화
+            </button>
+          </span>
           {#if !cached}<span class="dim hint">상세를 불러온 뒤 평가할 수 있습니다</span>{/if}
           {#if aiError}<div class="banner err" style="margin-top: 0.5rem">{aiError}</div>{/if}
         </div>
@@ -280,6 +285,7 @@
   dt { color: var(--faint); font-size: 0.78rem; }
   dd { margin: 0; font-size: 0.86rem; }
   .hint { font-size: 0.72rem; margin-top: 0.25rem; }
+  .aibtns { display: inline-flex; gap: 0.45rem; }
   .calc { font-size: 0.72rem; margin-left: 0.3rem; }
   .body { padding: 1rem 1.15rem 1.3rem; }
   .note { white-space: pre-wrap; font-size: 0.86rem; color: var(--muted); }
