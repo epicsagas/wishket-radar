@@ -107,7 +107,7 @@ irm https://github.com/epicsagas/wishket-radar/releases/latest/download/install.
 | 순서 | 스킬 | 트리거 예시 | 동작 |
 |---|---|---|---|
 | 1 | `wishket-onboard` | "위시켓 세팅해줘", "온보딩" | 바이너리 점검, 프로필 생성, 베이스라인 스캔 |
-| 2 | `wishket-profile` | "프로필 보여줘", "rust 가중치 올려" | `~/.wishket-radar/profile.yaml` 조회/편집. 다음 스캔에 바로 반영 |
+| 2 | `wishket-profile` | "프로필 보여줘", "rust 가중치 올려" | 매칭 프로필 조회/편집 (v0.4부터 `state.db`의 `settings.profile_yaml`가 정규 소스). 다음 스캔에 바로 반영 |
 | 3 | `wishket-scan` | "위시켓 스캔", "새 프로젝트 있어?" | 마지막 스캔 이후 신규만 diff |
 | 4 | `wishket-search` | "위시켓 검색", "flutter 프로젝트 있어?", "외주 찾아줘" | 임시 검색 (캐시 기록 없음) |
 | 5 | `wishket-scout` | "위시켓 분석", "스카우트", "리포트 뽑아줘" | 신규 스캔 + 상위 후보 심층 분석 + 리포트 |
@@ -124,6 +124,11 @@ irm https://github.com/epicsagas/wishket-radar/releases/latest/download/install.
 mkdir -p ~/.wishket-radar
 cp profile.example.yaml ~/.wishket-radar/profile.yaml
 ```
+
+> v0.4부터 첫 대시보드 기동에서 `profile.yaml`이 `state.db`로 이관된다. 이관된
+> 배포에서는 프로필 편집이 대시보드(내 정보)나 `wishket-profile` 스킬로만
+> 반영된다 — 파일을 다시 만들어도 무시된다. 수동 롤백: `*.migrated`를 원래
+> 이름으로 되돌리고 `state.db`를 삭제.
 
 리포트는 `~/.wishket-radar/reports/`, seen 캐시는 `~/.wishket-radar/state.db`(SQLite, WAL)다.
 
@@ -143,7 +148,8 @@ scripts/wishket-mcp dashboard --port 8790 --no-open
 - 제안서는 `proposals/<공고ID>/` 아래 공고 단위. 로컬 검토용 `draft.md`(마크다운)와 위시켓 폼 붙여넣기용 `form.txt`(플레인 텍스트, `#`/`**`/표 금지) 두 파일만 쓴다.
 - 라이트/다크 테마는 사이드바 하단, 버전과 같은 줄 맨 오른쪽 아이콘으로 전환한다. 선택은 브라우저에 남는다.
 - 스카우트 리포트의 적합도 판정(A/B/C)·주의점·제안 방향이 인박스 카드에 붙는다.
-- 편집 저장은 원자 쓰기(tmp+rename) 후 이전 본문을 `.bak`으로 1세대 보관한다. profile.yaml은 저장 시 스키마 검증을 거친다.
+- 편집 저장은 원자 쓰기(tmp+rename) 후 이전 본문을 `.bak`으로 1세대 보관한다(파일 기반 산출물: 리포트·제안서·포트폴리오). 프로필은 `state.db` settings에 저장되며 폼 저장 시 스키마 검증을 거친다.
+- 저장소는 SQLite(`state.db`, WAL 모드, 0600)다. 대시보드 3초 폴링과 쓰기가 겹쳐도 읽기가 막히지 않고, `backups/`에 7일 간격 `VACUUM INTO` 스냅샷 4세대를 유지한다. `reset_cache`는 seen 캐시·마지막 스캔 시각만 지운다(파이프라인·프로필 보존).
 
 ## MCP 도구
 
