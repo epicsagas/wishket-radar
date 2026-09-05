@@ -453,11 +453,21 @@ pub fn get_conversation(dir: &Path, id: i64) -> Result<Option<Value>, io::Error>
              WHERE conversation_id = ?1 ORDER BY id",
         )
         .map_err(io_err)?;
+    // assistant 응답은 마크다운이므로 sanitize된 HTML을 함께 실는다 —
+    // 클라에서 파서 없이 렌더(채팅 화면 최적화). user 메시지는 plain.
     let msgs = stmt
         .query_map([id], |r| {
+            let role: String = r.get(0)?;
+            let content: String = r.get(1)?;
+            let html = if role == "assistant" && !content.is_empty() {
+                crate::dashboard::api::render_markdown(&content)
+            } else {
+                String::new()
+            };
             Ok(json!({
-                "role": r.get::<_, String>(0)?,
-                "content": r.get::<_, String>(1)?,
+                "role": role,
+                "content": content,
+                "content_html": html,
                 "created_at": r.get::<_, String>(2)?,
             }))
         })

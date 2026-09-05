@@ -5,6 +5,8 @@
 export interface ChatTurn {
   role: 'user' | 'assistant'
   content: string
+  /** assistant 전용 — 서버가 sanitize한 렌더 결과. 스트리밍 중엔 없다. */
+  content_html?: string
 }
 
 export interface StreamResult {

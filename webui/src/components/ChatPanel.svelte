@@ -109,15 +109,22 @@
         onConversation?.(r.conversationId)
       }
       if (r.error) error = r.error
-      // 스트림 종료 = 서버 영속 완료 — 토큰 누적은 재조회로
+      // 스트림 종료 = 서버 영속 완료 — 재조회로 토큰 누적과 마크다운 렌더
+      // 결과(content_html)를 한 번에 교체한다. 스트리밍 중엔 plain text,
+      // 완료 후에만 HTML로 — delta마다 파싱하는 비용이 없다.
+      let refreshed = false
       if (activeId != null) {
-        const c = await api<ConvHeader>(`/api/ai/conversations/${activeId}`).catch(
-          () => null,
-        )
-        if (c) tokens = { in: c.tokens_in, out: c.tokens_out }
+        const c = await api<ConvHeader & { messages: ChatTurn[] }>(
+          `/api/ai/conversations/${activeId}`,
+        ).catch(() => null)
+        if (c) {
+          tokens = { in: c.tokens_in, out: c.tokens_out }
+          turns = c.messages
+          refreshed = true
+        }
       }
-      // 빈 응답(공급자 오류 등)이면 빈 풍선 제거
-      if (!assistant.content) turns.splice(turns.indexOf(assistant), 1)
+      // 재조회 실패 시에만 — 서버 기준 상태로 교체했으면 처리 불요
+      if (!refreshed && !assistant.content) turns.splice(turns.indexOf(assistant), 1)
     } catch (e) {
       error = String(e)
       if (!assistant.content) turns.splice(turns.indexOf(assistant), 1)
@@ -163,7 +170,14 @@
     {/if}
     {#each turns as t, i (i)}
       <div class="turn {t.role}">
-        <div class="bubble">{t.content || (streaming ? '…' : '')}</div>
+        <div class="bubble" class:md={!!t.content_html}>
+          {#if t.content_html}
+            <!-- 서버 render_markdown(pulldown-cmark + ammonia)이 sanitize한 값만 -->
+            <div class="markdown">{@html t.content_html}</div>
+          {:else}
+            {t.content || (streaming ? '…' : '')}
+          {/if}
+        </div>
       </div>
     {/each}
   </div>
@@ -253,6 +267,32 @@
   .assistant .bubble {
     background: var(--surface-hover);
     color: var(--muted);
+  }
+  /* 마크다운 렌더 버블 — pre-wrap 해제하고 전역 .markdown을 버블 크기에 맞춘다 */
+  .bubble.md {
+    white-space: normal;
+    min-width: 60%;
+  }
+  .md :global(.markdown) {
+    font-size: 0.85rem;
+    line-height: 1.65;
+  }
+  .md :global(.markdown > :first-child) {
+    margin-top: 0;
+  }
+  .md :global(.markdown > :last-child) {
+    margin-bottom: 0;
+  }
+  .md :global(.markdown p) {
+    margin: 0 0 0.5rem;
+  }
+  .md :global(.markdown ul),
+  .md :global(.markdown ol) {
+    margin: 0.3rem 0;
+    padding-left: 1.2rem;
+  }
+  .md :global(.markdown table) {
+    margin: 0.5rem 0;
   }
   .composer {
     display: flex;
