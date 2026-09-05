@@ -24,9 +24,9 @@
     '/dashboard': { comp: Dashboard, label: '대시보드' },
     '/pipeline': { comp: Pipeline, label: '지원 파이프라인' },
     '/proposals': { comp: Proposals, label: '제안서' },
-    '/profile': { comp: Profile, label: '내 정보' },
     '/reports': { comp: Reports, label: '리포트' },
     '/chats': { comp: Chats, label: 'AI 대화' },
+    '/profile': { comp: Profile, label: '설정' },
   }
   const order = Object.keys(pages)
 

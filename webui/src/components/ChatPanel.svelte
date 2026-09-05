@@ -13,7 +13,7 @@
     conversationId?: number | null
     projectId?: string | null
     projectTitle?: string | null
-    onConversation?: (id: number) => void
+    onConversation?: (id: number | null) => void
     onActivity?: () => void
   } = $props()
 
@@ -59,6 +59,14 @@
       loadedFor = id
     } catch (e) {
       if ((e as ApiError).status === 401) return
+      // 저장된 마지막 대화가 이미 삭제됐으면 조용히 새 대화로 폴백
+      if ((e as ApiError).status === 404) {
+        activeId = null
+        turns = []
+        tokens = null
+        onConversation?.(null)
+        return
+      }
       error = String(e)
     }
   }

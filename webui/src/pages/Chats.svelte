@@ -163,12 +163,16 @@
       <ChatPanel
         projectId={panelProject}
         projectTitle={projectTitle}
-        onConversation={(id) => (location.hash = `/chats/${id}`)}
+        onConversation={(id) => {
+          if (id != null) location.hash = `/chats/${id}`
+        }}
         onActivity={loadList}
       />
     {:else}
       <ChatPanel
-        onConversation={(id) => (location.hash = `/chats/${id}`)}
+        onConversation={(id) => {
+          if (id != null) location.hash = `/chats/${id}`
+        }}
         onActivity={loadList}
       />
     {/if}

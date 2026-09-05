@@ -1,11 +1,20 @@
 <script lang="ts">
   // 전 페이지 우하단 플로팅 채팅. 미니 모달에서 질문하고, 확대 버튼으로
   // 대화 화면(#/chats/{id}) 전환 — 같은 ChatPanel 컴포넌트.
+  // 마지막 대화는 localStorage에 기억 — 새로고침·재기동 후에도 이어가기.
   import { go } from '../router'
   import ChatPanel from './ChatPanel.svelte'
 
+  const LAST_CONV_KEY = 'wk_last_conversation'
+
   let open = $state(false)
-  let convId = $state<number | null>(null)
+  let convId = $state<number | null>(Number(localStorage.getItem(LAST_CONV_KEY)) || null)
+
+  function remember(id: number | null) {
+    convId = id
+    if (id != null) localStorage.setItem(LAST_CONV_KEY, String(id))
+    else localStorage.removeItem(LAST_CONV_KEY)
+  }
 
   function expand() {
     open = false
@@ -47,7 +56,7 @@
       <div class="mbody">
         <ChatPanel
           conversationId={convId}
-          onConversation={(id) => (convId = id)}
+          onConversation={remember}
         />
       </div>
     </div>
