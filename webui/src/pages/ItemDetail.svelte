@@ -60,6 +60,29 @@
       .then((r) => (docs = r.files.filter((f) => f.project_id === cur)))
       .catch(() => { /* 목록 실패는 조용히 무시 — 본문 표시가 우선 */ })
   })
+
+  // 제안서 AI 초안 (v0.7)
+  let draftBusy = $state(false)
+  let draftMsg = $state('')
+
+  async function generateDraft() {
+    draftBusy = true
+    draftMsg = ''
+    try {
+      const r = await api<{ path: string }>('/api/ai/proposal', {
+        method: 'POST',
+        body: JSON.stringify({ id }),
+      })
+      docs = (await api<{ files: FileEntry[] }>('/api/files/proposals')).files.filter(
+        (f) => f.project_id === id,
+      )
+      draftMsg = `초안이 생성되었습니다 — ${r.path.split('/').pop()} 열어 편집하세요.`
+    } catch (e) {
+      draftMsg = String(e)
+    } finally {
+      draftBusy = false
+    }
+  }
   const d = $derived(
     item?.deadline && $appState ? dday($appState.today, item.deadline) : null,
   )
@@ -220,7 +243,17 @@
       <h2 style="margin-top: 1.4rem">
         제안서
         <span class="dim srcnote">{docs.length}건</span>
+        <button
+          class="ghost mini"
+          style="margin-left: auto"
+          onclick={generateDraft}
+          disabled={draftBusy}
+          title="AI로 제안서 초안 생성"
+        >
+          {draftBusy ? '생성 중…' : 'AI 초안 생성'}
+        </button>
       </h2>
+      {#if draftMsg}<div class="banner info">{draftMsg}</div>{/if}
       {#if docs.length}
         <ul class="docs">
           {#each docs as f (f.name)}
@@ -231,9 +264,9 @@
             </li>
           {/each}
         </ul>
-      {:else}
+      {:else if !draftMsg}
         <p class="dim" style="font-size: 0.82rem; margin: 0">
-          이 공고로 만든 제안서가 없습니다. 채팅에서 "이 공고 지원서 써줘"로 만들 수 있습니다.
+          "AI 초안 생성"으로 시작하거나, 채팅에서 "이 공고 지원서 써줘"로 만들 수 있습니다.
         </p>
       {/if}
 

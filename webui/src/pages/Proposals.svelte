@@ -46,6 +46,29 @@
       .catch((e) => (error = String(e)))
       .finally(() => (loading = false))
   })
+
+  // 제안서 AI 초안 (v0.7) — 공고별로 생성, 완료 후 편집기로 바로 연다
+  let aiBusyId = $state<string | null>(null)
+  let aiMsg = $state('')
+
+  async function generateDraft(id: string) {
+    aiBusyId = id
+    aiMsg = ''
+    try {
+      const r = await api<{ path: string }>('/api/ai/proposal', {
+        method: 'POST',
+        body: JSON.stringify({ id }),
+      })
+      const res = await api<{ files: FileEntry[] }>(`/api/files/${root}`)
+      files = res.files
+      selected = r.path
+      aiMsg = '초안이 생성되었습니다 — 편집 후 저장하세요.'
+    } catch (e) {
+      aiMsg = String(e)
+    } finally {
+      aiBusyId = null
+    }
+  }
 </script>
 
 <div class="page-head">
@@ -56,6 +79,7 @@
 </div>
 
 {#if error}<div class="banner err">{error}</div>{/if}
+{#if aiMsg}<div class="banner info">{aiMsg}</div>{/if}
 
 <div class="split">
   <div class="panel list">
@@ -73,6 +97,15 @@
             {#if g.id}
               <a href="#/pipeline/{g.id}" class="gid">{g.id}</a>
               <span class="gtitle">{g.title ?? ''}</span>
+              <button
+                class="ghost mini"
+                style="margin-left: auto"
+                onclick={() => generateDraft(g.id)}
+                disabled={aiBusyId != null}
+                title="AI로 제안서 초안 생성"
+              >
+                {aiBusyId === g.id ? '생성 중…' : 'AI 초안'}
+              </button>
             {:else}
               <span class="gid misc">기타</span>
             {/if}

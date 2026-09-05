@@ -101,6 +101,99 @@
   }
   load()
 
+  // 프리셋 (v0.7) — 용도별 매칭 프리셋. 전환하면 스캔·AI 평가·대화가 전부 활성 프리셋을 쓴다
+  let presets = $state<string[]>([])
+  let activePreset = $state<string | null>(null)
+  let presetError = $state('')
+
+  function loadPresets() {
+    api<{ names: string[]; active: string | null }>('/api/profile/presets')
+      .then((r) => {
+        presets = r.names
+        activePreset = r.active
+      })
+      .catch((e) => (presetError = String(e)))
+  }
+  loadPresets()
+
+  async function activatePreset(name: string) {
+    if (name === activePreset) return
+    if (dirty && !confirm('저장되지 않은 변경이 사라집니다. 전환할까요?')) return
+    presetError = ''
+    try {
+      await api(`/api/profile/presets/${encodeURIComponent(name)}/activate`, { method: 'POST' })
+      activePreset = name
+      load()
+      await refresh()
+    } catch (e) {
+      presetError = String(e)
+    }
+  }
+
+  async function newPreset() {
+    const name = prompt('새 프리셋 이름 — 현재 프로필 내용이 복제됩니다')
+    if (!name?.trim()) return
+    presetError = ''
+    try {
+      await api('/api/profile/presets', {
+        method: 'POST',
+        body: JSON.stringify({ name: name.trim() }),
+      })
+      loadPresets()
+    } catch (e) {
+      presetError = String(e)
+    }
+  }
+
+  async function removePreset(name: string) {
+    if (!confirm(`프리셋 "${name}"을 삭제할까요?`)) return
+    presetError = ''
+    try {
+      await api(`/api/profile/presets/${encodeURIComponent(name)}`, { method: 'DELETE' })
+      loadPresets()
+    } catch (e) {
+      presetError = String(e)
+    }
+  }
+
+  // 가중치 보정 (v0.7) — 공고 히스토리 기반 조정안. 적용은 양식에 반영만,
+  // 저장 전까지 프로필은 불변.
+  interface WeightSuggestion {
+    name: string
+    from: number | null
+    to: number
+    reason: string
+  }
+  let wBusy = $state(false)
+  let wError = $state('')
+  let wSugs = $state<WeightSuggestion[]>([])
+
+  async function suggestWeights() {
+    wBusy = true
+    wError = ''
+    wSugs = []
+    try {
+      const r = await api<{ suggestions: WeightSuggestion[] }>('/api/ai/weights', {
+        method: 'POST',
+      })
+      wSugs = r.suggestions
+    } catch (e) {
+      wError = String(e)
+    } finally {
+      wBusy = false
+    }
+  }
+
+  function applyWeights() {
+    if (!profile) return
+    for (const s of wSugs) {
+      const sk = profile.skills.find((k) => k.name === s.name)
+      if (sk) sk.weight = s.to
+    }
+    touch()
+    wSugs = []
+  }
+
   function touch() { dirty = true; saved = false }
 
   function addSkill() {
@@ -277,6 +370,31 @@
 {:else if raw === null}
   <div class="panel"><div class="empty"><strong>profile.yaml 없음</strong>온보딩으로 생성하세요.</div></div>
 {:else}
+  <div class="panel sec">
+    <h2>
+      프로필 프리셋
+      <span class="dim">용도별 매칭 프리셋 — 전환하면 스캔·AI 평가·대화가 전부 활성 프리셋으로</span>
+    </h2>
+    {#if presetError}<div class="banner err">{presetError}</div>{/if}
+    <div class="presetrow">
+      <select
+        aria-label="프리셋 전환"
+        value={activePreset ?? ''}
+        onchange={(e) => activatePreset((e.currentTarget as HTMLSelectElement).value)}
+        disabled={!presets.length}
+      >
+        {#if !presets.length}<option value="">프리셋 없음</option>{/if}
+        {#each presets as p (p)}
+          <option value={p}>{p}{p === activePreset ? ' · 활성' : ''}</option>
+        {/each}
+      </select>
+      <button class="ghost" onclick={newPreset}>＋ 새 프리셋</button>
+      {#if activePreset && presets.length > 1}
+        <button class="ghost del" onclick={() => removePreset(activePreset!)}>삭제</button>
+      {/if}
+    </div>
+  </div>
+
   <div class="toolbar">
     <button class:ghost={mode !== 'form'} onclick={() => (mode = 'form')}>양식</button>
     <button class:ghost={mode !== 'yaml'} onclick={() => (mode = 'yaml')}>YAML</button>
@@ -312,10 +430,40 @@
       <div class="panel sec">
         <h2>
           기술 <span class="dim">{profile.skills.length}개 · 총 가중치 {totalWeight}</span>
+          <button
+            class="ghost mini"
+            style="margin-left: auto"
+            onclick={suggestWeights}
+            disabled={wBusy}
+            title="관심·스킵 히스토리 기반 가중치 조정안"
+          >
+            {wBusy ? '분석 중…' : 'AI 보정'}
+          </button>
         </h2>
         <p class="dim hint">
           가중치가 높을수록 매칭 점수에 크게 반영됩니다. 키워드는 쉼표로 구분하며, 공고 본문에 이 단어가 있으면 점수가 올라갑니다.
         </p>
+        {#if wError}<div class="banner err">{wError}</div>{/if}
+        {#if wSugs.length}
+          <div class="banner info">
+            조정안 {wSugs.length}건 — "적용"하면 양식에 반영됩니다(저장 전까지 프로필은 불변).
+            <button onclick={applyWeights}>적용</button>
+            <button class="ghost" onclick={() => (wSugs = [])}>무시</button>
+          </div>
+          <table class="wsug">
+            <thead><tr><th>스킬</th><th>현재</th><th>제안</th><th>근거</th></tr></thead>
+            <tbody>
+              {#each wSugs as s (s.name)}
+                <tr>
+                  <td>{s.name}</td>
+                  <td class="mono">{s.from ?? '-'}</td>
+                  <td class="mono">{s.to}</td>
+                  <td class="reason">{s.reason}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        {/if}
         {#each profile.skills as sk, i (i)}
           <div class="skill">
             <div class="srow">
@@ -442,4 +590,10 @@
   }
   .filepane textarea { flex: 1; min-height: 0; border: none; border-radius: 0; background: var(--bg); resize: none; }
   .filepane textarea:focus { box-shadow: none; }
+  .presetrow { display: flex; gap: 0.45rem; align-items: center; }
+  .presetrow select { min-width: 12rem; }
+  .wsug { width: 100%; border-collapse: collapse; margin: 0.6rem 0; font-size: 0.8rem; }
+  .wsug th, .wsug td { text-align: left; padding: 0.35rem 0.5rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  .wsug th { color: var(--faint); font-weight: 500; font-size: 0.72rem; }
+  .wsug .reason { color: var(--muted); }
 </style>
