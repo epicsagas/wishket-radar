@@ -218,6 +218,32 @@ pub fn profile_db_backed(dir: &std::path::Path) -> bool {
     crate::sqlite::profile_db_backed(dir)
 }
 
+// v0.7 다중 프리셋 — sqlite DAO의 얇은 래퍼 (API는 state 모듈만 본다)
+pub fn sqlite_list_presets(
+    dir: &std::path::Path,
+) -> std::io::Result<(Vec<String>, Option<String>)> {
+    crate::sqlite::list_profile_presets(dir)
+}
+
+pub fn sqlite_create_preset(
+    dir: &std::path::Path,
+    name: &str,
+    copy_from: Option<&str>,
+) -> std::io::Result<()> {
+    crate::sqlite::create_profile_preset(dir, name, copy_from)
+}
+
+pub fn sqlite_delete_preset(
+    dir: &std::path::Path,
+    name: &str,
+) -> Result<(), crate::sqlite::PresetDeleteError> {
+    crate::sqlite::delete_profile_preset(dir, name)
+}
+
+pub fn sqlite_activate_preset(dir: &std::path::Path, name: &str) -> std::io::Result<()> {
+    crate::sqlite::activate_profile_preset(dir, name)
+}
+
 /// unix epoch seconds → ISO-8601 local-time-ish (KST fixed +09:00).
 /// ponytail: fixed KST offset, no tz database — scans run on a KST machine.
 pub fn now_iso() -> String {

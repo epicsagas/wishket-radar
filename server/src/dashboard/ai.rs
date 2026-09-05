@@ -428,12 +428,19 @@ async fn relay_stream(
 // ---------------------------------------------------------------------------
 
 /// agents/wishket-analyst.md를 단일 소스로 — frontmatter만 떼고 본문 그대로.
-fn analyst_system() -> String {
-    let raw = include_str!("../../../agents/wishket-analyst.md");
+fn frontmatter_stripped(raw: &str) -> String {
     raw.strip_prefix("---")
         .and_then(|r| r.split_once("\n---"))
         .map(|(_, rest)| rest.trim_start().to_string())
         .unwrap_or_else(|| raw.to_string())
+}
+
+fn analyst_system() -> String {
+    frontmatter_stripped(include_str!("../../../agents/wishket-analyst.md"))
+}
+
+fn proposal_system() -> String {
+    frontmatter_stripped(include_str!("../../../agents/wishket-proposal.md"))
 }
 
 struct AnalystOutput {
@@ -595,6 +602,191 @@ async fn evaluate(
         "report": path.file_name().and_then(|n| n.to_str()),
         "usage": {"input_tokens": completion.usage.0, "output_tokens": completion.usage.1},
     })))
+}
+
+// ---------------------------------------------------------------------------
+// 제안서 AI 초안 (R1) · 키워드 가중치 보정 (R2)
+// ---------------------------------------------------------------------------
+
+/// 기존 draft.md 맥락 포함 상한 — 프롬프트 폭발 방지.
+const CONTEXT_LIMIT: usize = 6000;
+
+#[derive(Deserialize)]
+struct ProposalBody {
+    id: String,
+}
+
+async fn generate_proposal(
+    State(app): ApiState,
+    Json(body): Json<ProposalBody>,
+) -> Result<Json<Value>, ApiError> {
+    let cfg = load_config(&app.state_dir).ok_or_else(|| {
+        err(
+            StatusCode::CONFLICT,
+            "AI 설정이 없습니다 — 설정 탭에서 설정하세요",
+        )
+    })?;
+    let st = crate::state::load_in(&app.state_dir);
+    let Some(e) = st.seen.get(&body.id) else {
+        return Err(err(StatusCode::NOT_FOUND, "캐시된 공고가 없습니다"));
+    };
+    if e.description.is_none() {
+        return Err(err(
+            StatusCode::CONFLICT,
+            "상세 캐시가 없습니다 — 먼저 상세를 불러오세요",
+        ));
+    }
+    let profile = crate::state::load_profile_yaml(&app.state_dir).unwrap_or_default();
+    let project = serde_json::to_value(e)
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let draft_path = app
+        .state_dir
+        .join("proposals")
+        .join(&body.id)
+        .join("draft.md");
+    let existing = std::fs::read_to_string(&draft_path).unwrap_or_default();
+    let revising = !existing.trim().is_empty();
+    let user = format!(
+        "[공고 데이터]\n{}\n\n[기술 프로필]\n{}\n\n[기존 초안]\n{}",
+        serde_json::to_string_pretty(&project).unwrap_or_default(),
+        profile.chars().take(4000).collect::<String>(),
+        if revising {
+            existing.chars().take(CONTEXT_LIMIT).collect::<String>()
+        } else {
+            "(없음 — 새로 작성)".into()
+        }
+    );
+    let system = proposal_system();
+    let completion = complete(&cfg, &system, &[("user".into(), user)]).await?;
+    let text = completion
+        .text
+        .trim()
+        .trim_start_matches("```markdown")
+        .trim_end_matches("```")
+        .to_string();
+    if text.trim().is_empty() {
+        return Err(err(
+            StatusCode::BAD_GATEWAY,
+            "모델이 빈 초안을 반환했습니다",
+        ));
+    }
+    // atomic_write가 .bak 1세대를 보존 — 재생성해도 이전 편집본은 남는다.
+    super::fsutil::atomic_write(&draft_path, text.as_bytes())
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({
+        "ok": true,
+        "path": format!("{}/draft.md", body.id),
+        "bytes": text.len(),
+        "revised": revising,
+        "model": cfg.model,
+        "usage": {"input_tokens": completion.usage.0, "output_tokens": completion.usage.1},
+    })))
+}
+
+/// 키워드 가중치 조정안 — 저장은 하지 않고 제안만 반환한다.
+/// webui가 표로 보여주고, 사용자가 "적용"하면 기존 프로필 저장 API로 저장된다.
+#[derive(Deserialize)]
+struct WeightSuggestion {
+    name: String,
+    #[serde(default)]
+    from: Option<u32>,
+    to: u32,
+    #[serde(default)]
+    reason: String,
+}
+
+const WEIGHTS_SYSTEM: &str = "당신은 위시켓 공고 매칭 키워드 가중치 조정 분석가입니다. 입력: 현재 프로필의 스킬별 가중치(1~5)와 공고 히스토리(관심/스킵/미분류 분포, 관심·스킵 공고에 출현한 스킬 통계). 분석 규칙: 관심 공고에 자주 나온 스킬은 올리고, 스킵 공고에만 나오는 스킬은 내린다. 근거가 없는 스킬은 바꾸지 않는다. 가중치는 1~5 범위. 출력은 설명 없이 JSON만: {\"suggestions\":[{\"name\":\"스킬\",\"from\":3,\"to\":4,\"reason\":\"한국어 근거\"}]}. 조정이 필요한 스킬만 넣는다. 전부 유지라면 {\"suggestions\":[]}.";
+
+async fn suggest_weights(State(app): ApiState) -> Result<Json<Value>, ApiError> {
+    let cfg = load_config(&app.state_dir).ok_or_else(|| {
+        err(
+            StatusCode::CONFLICT,
+            "AI 설정이 없습니다 — 설정 탭에서 설정하세요",
+        )
+    })?;
+    let profile_raw = crate::state::load_profile_yaml(&app.state_dir).unwrap_or_default();
+    let profile: crate::profile::Profile = serde_yaml::from_str(&profile_raw)
+        .map_err(|e| err(StatusCode::CONFLICT, format!("프로필 파싱 실패: {e}")))?;
+    if profile.skills.is_empty() {
+        return Err(err(StatusCode::CONFLICT, "프로필에 기술이 없습니다"));
+    }
+
+    // seen 히스토리 — 트리아지 분포 + 관심·스킵 공고의 스킬 출현 통계
+    let st = crate::state::load_in(&app.state_dir);
+    let mut interested = 0u32;
+    let mut skipped = 0u32;
+    let mut unclassified = 0u32;
+    let mut hits: std::collections::BTreeMap<String, [u32; 2]> = Default::default(); // [관심, 스킵]
+    for e in st.seen.values() {
+        match e.triage {
+            Some(crate::state::Triage::Interested) => {
+                interested += 1;
+                for s in &e.skills {
+                    hits.entry(s.clone()).or_default()[0] += 1;
+                }
+            }
+            Some(crate::state::Triage::Skipped) => {
+                skipped += 1;
+                for s in &e.skills {
+                    hits.entry(s.clone()).or_default()[1] += 1;
+                }
+            }
+            None => unclassified += 1,
+        }
+    }
+    let stats = format!(
+        "전체 {}건: 관심 {} · 스킵 {} · 미분류 {}\n\n스킬 출현 (관심/스킵):\n{}",
+        st.seen.len(),
+        interested,
+        skipped,
+        unclassified,
+        hits.iter()
+            .map(|(s, c)| format!("- {s}: 관심 {}, 스킵 {}", c[0], c[1]))
+            .collect::<Vec<_>>()
+            .join("\n")
+    );
+    let current = profile
+        .skills
+        .iter()
+        .map(|s| format!("- {}: {}", s.name, s.weight))
+        .collect::<Vec<_>>()
+        .join("\n");
+    let user = format!("[현재 스킬 가중치]\n{current}\n\n[공고 히스토리]\n{stats}");
+    let completion = complete(&cfg, WEIGHTS_SYSTEM, &[("user".into(), user)]).await?;
+    let Some(json_str) = extract_json(&completion.text) else {
+        return Err(err(
+            StatusCode::BAD_GATEWAY,
+            "모델 응답에서 JSON을 찾지 못했습니다",
+        ));
+    };
+    let parsed: serde_json::Value = serde_json::from_str(json_str)
+        .map_err(|e| err(StatusCode::BAD_GATEWAY, format!("JSON 파싱 실패: {e}")))?;
+    let suggestions: Vec<WeightSuggestion> = serde_json::from_value(parsed["suggestions"].clone())
+        .map_err(|e| err(StatusCode::BAD_GATEWAY, format!("제안 형식 오류: {e}")))?;
+    // 가중치 범위 방어 — 모델이 1~5를 벗어나면 자르고 from은 클라 표시용으로만
+    let suggestions: Vec<Value> = suggestions
+        .into_iter()
+        .map(|s| {
+            json!({
+                "name": s.name,
+                "from": s.from,
+                "to": s.to.clamp(1, 5),
+                "reason": s.reason,
+            })
+        })
+        .collect();
+    Ok(Json(json!({
+        "suggestions": suggestions,
+        "model": cfg.model,
+        "usage": {"input_tokens": completion.usage.0, "output_tokens": completion.usage.1},
+    })))
+}
+
+/// 모델 응답에서 첫 `{`~마지막 `}` 사이를 뽑는다(설명 문장 동봉 대비).
+fn extract_json(text: &str) -> Option<&str> {
+    let start = text.find('{')?;
+    let end = text.rfind('}')?;
+    (start < end).then(|| &text[start..=end])
 }
 
 // ---------------------------------------------------------------------------
@@ -916,6 +1108,8 @@ pub fn router() -> Router<Arc<AppState>> {
     Router::new()
         .route("/settings/ai", get(get_settings_ai).put(put_settings_ai))
         .route("/ai/evaluate", post(evaluate))
+        .route("/ai/proposal", post(generate_proposal))
+        .route("/ai/weights", post(suggest_weights))
         .route("/ai/chat", post(chat))
         .route(
             "/ai/conversations",
