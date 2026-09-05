@@ -315,6 +315,62 @@ async fn put_profile_structured(
     Ok(Json(json!({"ok": true})))
 }
 
+/// GET /api/profile/presets — 프리셋 이름 목록 + 활성 이름.
+async fn get_profile_presets(State(app): ApiState) -> Result<Json<Value>, ApiError> {
+    let (names, active) = state::sqlite_list_presets(&app.state_dir)
+        .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(json!({ "active": active, "names": names })))
+}
+
+/// POST /api/profile/presets {name, copy_from?} — 생성. 중복 409.
+async fn post_profile_preset(
+    State(app): ApiState,
+    Json(body): Json<Value>,
+) -> Result<Json<Value>, ApiError> {
+    let name = body
+        .get("name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| err(StatusCode::BAD_REQUEST, "name 필드 필요"))?;
+    let copy_from = body.get("copy_from").and_then(Value::as_str);
+    state::sqlite_create_preset(&app.state_dir, name, copy_from)
+        .map_err(|e| err(StatusCode::CONFLICT, e.to_string()))?;
+    Ok(Json(json!({ "ok": true })))
+}
+
+/// DELETE /api/profile/presets/{name} — 활성·마지막 프리셋은 400, 미존재 404.
+async fn delete_profile_preset(
+    State(app): ApiState,
+    Path(name): Path<String>,
+) -> Result<StatusCode, ApiError> {
+    match state::sqlite_delete_preset(&app.state_dir, &name) {
+        Ok(()) => Ok(StatusCode::NO_CONTENT),
+        Err(crate::sqlite::PresetDeleteError::NotFound) => {
+            Err(err(StatusCode::NOT_FOUND, "프리셋을 찾을 수 없습니다"))
+        }
+        Err(crate::sqlite::PresetDeleteError::Active) => Err(err(
+            StatusCode::BAD_REQUEST,
+            "활성 프리셋은 삭제할 수 없습니다 — 먼저 다른 프리셋으로 전환하세요",
+        )),
+        Err(crate::sqlite::PresetDeleteError::Last) => Err(err(
+            StatusCode::BAD_REQUEST,
+            "마지막 프리셋은 삭제할 수 없습니다",
+        )),
+        Err(crate::sqlite::PresetDeleteError::Internal(m)) => {
+            Err(err(StatusCode::INTERNAL_SERVER_ERROR, m))
+        }
+    }
+}
+
+/// POST /api/profile/presets/{name}/activate — 전환. 이후 매칭·AI가 전부 이 프리셋을 쓴다.
+async fn post_activate_preset(
+    State(app): ApiState,
+    Path(name): Path<String>,
+) -> Result<Json<Value>, ApiError> {
+    state::sqlite_activate_preset(&app.state_dir, &name)
+        .map_err(|e| err(StatusCode::NOT_FOUND, e.to_string()))?;
+    Ok(Json(json!({ "ok": true, "active": name })))
+}
+
 async fn put_profile(
     State(app): ApiState,
     Json(body): Json<Value>,
@@ -784,6 +840,18 @@ pub fn router() -> Router<Arc<AppState>> {
         .route(
             "/profile/structured",
             axum::routing::put(put_profile_structured),
+        )
+        .route(
+            "/profile/presets",
+            get(get_profile_presets).post(post_profile_preset),
+        )
+        .route(
+            "/profile/presets/{name}",
+            axum::routing::delete(delete_profile_preset),
+        )
+        .route(
+            "/profile/presets/{name}/activate",
+            axum::routing::post(post_activate_preset),
         )
         .route("/applications", get(get_applications))
         .route("/inbox", get(get_inbox))

@@ -332,10 +332,14 @@ pub fn save_applications(dir: &Path, apps: &[Value]) -> Result<(), io::Error> {
     tx.commit().map_err(io_err)
 }
 
-/// DB의 profile.yaml 원문. 없어도 state_dir에 파일이 남아 있으면(미이관·깨짐) 그걸로 폴백.
-/// open_ready — open()으로 db를 임의 생성하면 ensure의 마이그레이션을 영구 우회한다.
+/// DB의 profile.yaml 원문. v0.7 프리셋이 있으면 활성 프리셋 내용을,
+/// 없으면 기존 단일 키(profile_yaml) → state_dir 파일(미이관) 순으로 폴백.
+/// 프리셋 도입 배포도 별도 마이그레이션 없이 이 경로 하나로 흡수된다.
 pub fn load_profile_yaml(dir: &Path) -> Option<String> {
     let conn = open_ready(dir).ok()?;
+    if let Some(yaml) = active_preset_yaml(&conn) {
+        return Some(yaml);
+    }
     let stored = get_setting(&conn, "profile_yaml");
     if stored.is_some() {
         return stored;
@@ -345,14 +349,124 @@ pub fn load_profile_yaml(dir: &Path) -> Option<String> {
 
 pub fn save_profile_yaml(dir: &Path, yaml: &str) -> Result<(), io::Error> {
     let conn = open_ready(dir)?;
+    // 프리셋이 존재하면 활성 프리셋에 저장 — 프리셋 도입 후 단일 키로
+    // 되돌아가 프리셋을 무시하는 사고를 막는다.
+    if let Some(mut presets) = read_presets(&conn) {
+        let active = get_setting(&conn, "profile_active").unwrap_or_else(|| "기본".into());
+        if let Some(slot) = presets.get_mut(&active) {
+            *slot = yaml.to_string();
+            write_presets(&conn, &presets)?;
+            return Ok(());
+        }
+    }
     set_setting(&conn, "profile_yaml", yaml)
+}
+
+/// 활성 프리셋의 yaml. 프리셋이 없거나 active 이름이 가리키는 프리셋이
+/// 없으면 None — 폴백 경로(profile_yaml)로 간다.
+fn active_preset_yaml(conn: &Connection) -> Option<String> {
+    let active = get_setting(conn, "profile_active")?;
+    read_presets(conn)?.get(&active).cloned()
+}
+
+fn read_presets(conn: &Connection) -> Option<std::collections::BTreeMap<String, String>> {
+    let raw = get_setting(conn, "profile_presets")?;
+    serde_json::from_str(&raw).ok()
+}
+
+fn write_presets(
+    conn: &Connection,
+    presets: &std::collections::BTreeMap<String, String>,
+) -> Result<(), io::Error> {
+    let raw = serde_json::to_string(presets).map_err(|e| io::Error::other(e.to_string()))?;
+    set_setting(conn, "profile_presets", &raw)
+}
+
+/// 프리셋 목록 (이름 정렬) + 활성 이름. presets가 아직 없으면 빈 목록.
+pub fn list_profile_presets(dir: &Path) -> Result<(Vec<String>, Option<String>), io::Error> {
+    let conn = open_ready(dir)?;
+    let presets = read_presets(&conn).unwrap_or_default();
+    Ok((
+        presets.keys().cloned().collect(),
+        get_setting(&conn, "profile_active"),
+    ))
+}
+
+/// 프리셋 생성 — copy_from이 있으면 그 프리셋(없으면 활성/기존 프로필) 내용 복제.
+/// 이름 중복은 Err. 생성만으로는 활성이 되지 않는다(명시적 activate).
+pub fn create_profile_preset(
+    dir: &Path,
+    name: &str,
+    copy_from: Option<&str>,
+) -> Result<(), io::Error> {
+    let name = name.trim();
+    if name.is_empty() {
+        return Err(io::Error::other("프리셋 이름이 비었습니다"));
+    }
+    let conn = open_ready(dir)?;
+    let mut presets = read_presets(&conn).unwrap_or_default();
+    if presets.contains_key(name) {
+        return Err(io::Error::other("이미 있는 프리셋 이름입니다"));
+    }
+    let base = match copy_from {
+        Some(from) => presets.get(from).cloned(),
+        None => None,
+    }
+    .or_else(|| {
+        let active = get_setting(&conn, "profile_active");
+        active.and_then(|a| read_presets(&conn).and_then(|p| p.get(&a).cloned()))
+    })
+    .or_else(|| get_setting(&conn, "profile_yaml"))
+    .unwrap_or_default();
+    presets.insert(name.to_string(), base);
+    write_presets(&conn, &presets)
+}
+
+/// 프리셋 삭제 — 활성 프리셋이거나 프리셋이 1개뿐이면 거부(400용).
+pub fn delete_profile_preset(dir: &Path, name: &str) -> Result<(), PresetDeleteError> {
+    let conn = open_ready(dir).map_err(|e| PresetDeleteError::Internal(e.to_string()))?;
+    let presets = read_presets(&conn)
+        .ok_or_else(|| PresetDeleteError::Internal("프리셋이 없습니다".into()))?;
+    if !presets.contains_key(name) {
+        return Err(PresetDeleteError::NotFound);
+    }
+    let active = get_setting(&conn, "profile_active");
+    if active.as_deref() == Some(name) {
+        return Err(PresetDeleteError::Active);
+    }
+    if presets.len() == 1 {
+        return Err(PresetDeleteError::Last);
+    }
+    let mut presets = presets;
+    presets.remove(name);
+    write_presets(&conn, &presets).map_err(|e| PresetDeleteError::Internal(e.to_string()))
+}
+
+#[derive(Debug)]
+pub enum PresetDeleteError {
+    NotFound,
+    Active,
+    Last,
+    Internal(String),
+}
+
+/// 활성 프리셋 전환 — 해당 프리셋이 있을 때만.
+pub fn activate_profile_preset(dir: &Path, name: &str) -> Result<(), io::Error> {
+    let conn = open_ready(dir)?;
+    let presets = read_presets(&conn).ok_or_else(|| io::Error::other("프리셋이 없습니다"))?;
+    if !presets.contains_key(name) {
+        return Err(io::Error::other("프리셋을 찾을 수 없습니다"));
+    }
+    set_setting(&conn, "profile_active", name)
 }
 
 /// 프로필의 정규 소스가 DB인지. API의 profile_external 힌트 계산에 쓴다.
 pub fn profile_db_backed(dir: &Path) -> bool {
     open_ready(dir)
         .ok()
-        .and_then(|c| get_setting(&c, "profile_yaml"))
+        .and_then(|c| {
+            get_setting(&c, "profile_yaml").or_else(|| get_setting(&c, "profile_presets"))
+        })
         .is_some()
 }
 
@@ -1004,6 +1118,65 @@ mod tests {
         let list2 = list_conversations(&dir).unwrap();
         let orphan = list2.iter().find(|c| c["title"] == "무연결").unwrap();
         assert!(orphan["project_title"].is_null());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn profile_presets_fallback_and_activation() {
+        let dir = tmpdir("presets");
+        // 기존 배포: 프리셋 없이 단일 키 — 폴백으로 그대로 읽힌다 (AC3)
+        save_profile_yaml(&dir, "skills: [Rust]").unwrap();
+        assert_eq!(load_profile_yaml(&dir).as_deref(), Some("skills: [Rust]"));
+
+        // 프리셋 생성(기존 프로필 복제) → 활성화 → load가 프리셋을 반환
+        create_profile_preset(&dir, "AI 특화", None).unwrap();
+        create_profile_preset(&dir, "AI 특화", None).unwrap_err(); // 중복 409용
+        activate_profile_preset(&dir, "AI 특화").unwrap();
+        let (names, active) = list_profile_presets(&dir).unwrap();
+        assert_eq!(names, vec!["AI 특화".to_string()]);
+        assert_eq!(active.as_deref(), Some("AI 특화"));
+        assert_eq!(
+            load_profile_yaml(&dir).as_deref(),
+            Some("skills: [Rust]"),
+            "복제본이라 내용 동일"
+        );
+
+        // 활성 프리셋 상태에서 저장 — 단일 키가 아니라 프리셋에 반영된다
+        save_profile_yaml(&dir, "skills: [Rust, AI]").unwrap();
+        assert_eq!(
+            load_profile_yaml(&dir).as_deref(),
+            Some("skills: [Rust, AI]")
+        );
+
+        // 삭제 가드: 활성 삭제 거부, 미존재 NotFound, 마지막 프리셋 삭제 거부
+        assert!(matches!(
+            delete_profile_preset(&dir, "AI 특화"),
+            Err(PresetDeleteError::Active)
+        ));
+        assert!(matches!(
+            delete_profile_preset(&dir, "없는 프리셋"),
+            Err(PresetDeleteError::NotFound)
+        ));
+        create_profile_preset(&dir, "보수형", None).unwrap();
+        activate_profile_preset(&dir, "보수형").unwrap();
+        assert!(matches!(
+            delete_profile_preset(&dir, "보수형"),
+            Err(PresetDeleteError::Active)
+        ));
+        activate_profile_preset(&dir, "AI 특화").unwrap();
+        delete_profile_preset(&dir, "보수형").unwrap();
+        // 프리셋이 1개뿐이고 활성이 아니면(active 미설정) 마지막 삭제 거부
+        let dir2 = tmpdir("presets-last");
+        create_profile_preset(&dir2, "하나", None).unwrap();
+        let last = matches!(
+            delete_profile_preset(&dir2, "하나"),
+            Err(PresetDeleteError::Last)
+        );
+        assert!(last, "마지막 프리셋 삭제 거부");
+
+        // 전체 삭제해도 단일 키 경로로 폴백 — 데이터 소실 없음
+        // (마지막 삭제는 거부되므로 실제론 남는다 — 폴백 단증만 확인)
+        assert!(load_profile_yaml(&dir).is_some());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
