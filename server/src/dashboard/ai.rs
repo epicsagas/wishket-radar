@@ -601,11 +601,121 @@ async fn evaluate(
 // 대화 (R4·R5)
 // ---------------------------------------------------------------------------
 
-/// 대화용 시스템 프롬프트 — 공고 컨텍스트는 있을 때 덧붙인다.
-const CHAT_SYSTEM: &str = "당신은 위시켓 외주 공고 분석 도우미입니다. 주어진 공고 컨텍스트와 기술 프로필에 근거해서만 답하고, 근거가 없으면 \"공고에 명시 없음\"이라고 답합니다. 한국어로 답합니다.";
+/// 대화용 시스템 프롬프트 — 아래 [데이터] 섹션(build_chat_system이 채움)에
+/// 근거해서만 답한다.
+const CHAT_SYSTEM: &str = "당신은 위시켓 외주 공고 분석 도우미이며, 사용자의 대시보드 데이터에 접근할 수 있습니다. 아래 [데이터] 섹션(기술 프로필·공고 캐시·지원 파이프라인·연결 공고 상세)에 근거해서만 답하고, 근거가 없으면 \"데이터에 없음\"이라고 답합니다. 추천·비교를 물으면 매칭 점수·적합도·마감·예산을 근거로 답하고, 공고를 언급할 때는 [공고ID] 제목 형태로 표기합니다. 한국어로 답합니다.";
 
 /// 공급자에 재전송할 최대 메시지 수 (20턴).
 const MAX_HISTORY: usize = 40;
+
+/// 대화 시스템 프롬프트에 대시보드 데이터를 주입한다. 모든 대화가 공통으로
+/// 프로필·공고 캐시 요약·파이프라인 현황을 보고, project_id가 연결된 대화는
+/// 해당 공고 상세까지 본다. — 일반 대화("내 프로필에 맞는 공고 top 3")도
+/// 근거 없이 "공고에 명시 없음"으로 답하지 않게 하기 위함.
+fn build_chat_system(dir: &std::path::Path, project_id: Option<&str>) -> String {
+    let mut s = CHAT_SYSTEM.to_string();
+    let st = crate::state::load_in(dir);
+
+    // 기술 프로필
+    let profile = crate::state::load_profile_yaml(dir).unwrap_or_default();
+    if !profile.trim().is_empty() {
+        s.push_str(&format!(
+            "\n\n[기술 프로필]\n{}",
+            profile.chars().take(4000).collect::<String>()
+        ));
+    }
+
+    // 공고 캐시 요약 — 매칭 점수 내림차순 상위 60건. 라인당 한 줄 요약으로
+    // 토큰 폭발을 막는다(전체 본문은 연결 공고에만).
+    let analyses = super::reports::load_all(&dir.join("reports"));
+    let mut entries: Vec<(&String, &SeenEntry)> = st.seen.iter().collect();
+    entries.sort_by_key(|(_, e)| std::cmp::Reverse(e.score.unwrap_or(0)));
+    let total = entries.len();
+    let mut lines = String::new();
+    fn or_dash(o: &Option<String>) -> &str {
+        o.as_deref().unwrap_or("-")
+    }
+    for (id, e) in entries.iter().take(60) {
+        let grade = analyses
+            .get(*id)
+            .and_then(|a| a.grade.clone())
+            .map(|g| {
+                let score = analyses
+                    .get(*id)
+                    .and_then(|a| a.score)
+                    .map(|s| format!(" {s}점"))
+                    .unwrap_or_default();
+                format!("{g}{score}")
+            })
+            .unwrap_or_else(|| "-".into());
+        let title = if e.title.trim().is_empty() {
+            "(제목 없음)"
+        } else {
+            e.title.as_str()
+        };
+        lines.push_str(&format!(
+            "- [{id}] {title} | 매칭 {} | 적합도 {grade} | 예산 {} | 기간 {} | 마감 {} | {}\n",
+            e.score.map(|v| v.to_string()).unwrap_or_else(|| "-".into()),
+            or_dash(&e.budget),
+            or_dash(&e.duration),
+            or_dash(&e.deadline),
+            match e.triage {
+                Some(crate::state::Triage::Interested) => "파이프라인",
+                Some(crate::state::Triage::Skipped) => "스킵",
+                None => "미분류",
+            }
+        ));
+    }
+    if !lines.is_empty() {
+        s.push_str(&format!(
+            "\n\n[공고 캐시 — 적합도순 상위 {shown}건 / 전체 {total}건]\n{lines}",
+            shown = total.min(60)
+        ));
+    }
+
+    // 지원 파이프라인 현황 — 단계별 카운트 + 항목 목록
+    let apps: Vec<super::apps::Application> = crate::sqlite::load_applications(dir)
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|v| serde_json::from_value(v.clone()).ok())
+        .collect();
+    if !apps.is_empty() {
+        let mut counts: std::collections::BTreeMap<String, usize> = Default::default();
+        let mut items = String::new();
+        for a in &apps {
+            *counts.entry(a.status.clone()).or_default() += 1;
+            items.push_str(&format!(
+                "- [{}] {} | 단계 {} | 지원 {} | 마감 {}\n",
+                a.id,
+                a.title,
+                a.status,
+                a.applied_at.as_deref().unwrap_or("-"),
+                a.deadline.as_deref().unwrap_or("-")
+            ));
+        }
+        let summary = counts
+            .iter()
+            .map(|(st, n)| format!("{st} {n}"))
+            .collect::<Vec<_>>()
+            .join(" · ");
+        s.push_str(&format!(
+            "\n\n[지원 파이프라인 — 총 {}건: {summary}]\n{items}",
+            apps.len()
+        ));
+    }
+
+    // 연결 공고 상세 — 본문·조건까지 (기존 동작 유지)
+    if let Some(pid) = project_id {
+        if let Some(e) = st.seen.get(pid) {
+            let project = serde_json::to_value(e).unwrap_or_default();
+            s.push_str(&format!(
+                "\n\n[연결 공고 상세 — {pid}]\n{}",
+                serde_json::to_string(&project).unwrap_or_default()
+            ));
+        }
+    }
+    s
+}
 
 /// 연속 same-role 메시지를 하나로 합친다. 고아 user 턴(공급자 실패·중단
 /// 스트림)이 [user,user] 배열을 만들면 공급자가 400으로 거부한다.
@@ -659,8 +769,8 @@ async fn chat(State(app): ApiState, Json(body): Json<ChatBody>) -> Result<Respon
                 .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         }
     };
-    // 컨텍스트: 대화에 묶인 공고 캐시 + 프로필 (후속 질문이 같은 맥락을 유지)
-    let mut system = CHAT_SYSTEM.to_string();
+    // 컨텍스트: 모든 대화에 프로필·공고 캐시 요약·파이프라인 현황을 주입하고,
+    // 공고에 연결된 대화는 해당 공고 상세(본문·조건)까지 덧붙인다.
     let conv = sqlite::get_conversation(&dir, conversation_id)
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
     let project_id = conv
@@ -668,18 +778,7 @@ async fn chat(State(app): ApiState, Json(body): Json<ChatBody>) -> Result<Respon
         .and_then(|c| c.get("project_id"))
         .and_then(Value::as_str)
         .map(String::from);
-    if let Some(pid) = &project_id {
-        let st = crate::state::load_in(&dir);
-        if let Some(e) = st.seen.get(pid) {
-            let profile = crate::state::load_profile_yaml(&dir).unwrap_or_default();
-            let project = serde_json::to_value(e).unwrap_or_default();
-            system.push_str(&format!(
-                "\n\n[기술 프로필]\n{}\n\n[공고 컨텍스트]\n{}",
-                profile.chars().take(4000).collect::<String>(),
-                serde_json::to_string(&project).unwrap_or_default()
-            ));
-        }
-    }
+    let system = build_chat_system(&dir, project_id.as_deref());
     // 전체 메시지 배열을 공급자에 재전송한다 (로드맵: 이전 맥락 이어가기)
     let history: Vec<(String, String)> = conv
         .and_then(|c| c.get("messages").cloned())
@@ -1247,6 +1346,54 @@ mod tests {
         assert!(
             crate::sqlite::get_conversation(&dir, id).unwrap().is_none(),
             "메시지 포함 대화 전체 삭제"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn chat_system_injects_profile_projects_and_pipeline() {
+        let dir = tmpdir("chat-sys");
+        let _ = crate::sqlite::create_conversation(&dir, None, "스키마 생성용");
+        {
+            let conn = rusqlite::Connection::open(crate::sqlite::db_path(&dir)).unwrap();
+            for (id, title, score) in [("1", "높은점수공고", 90), ("2", "낮은점수공고", 10)]
+            {
+                let data = format!(
+                    r#"{{"first_seen":"2026-09-01T10:00:00+09:00","title":"{title}","score":{score},"budget":"월 500만원","deadline":"2026-09-30"}}"#
+                );
+                conn.execute(
+                    "INSERT INTO seen (id, data) VALUES (?1, ?2)",
+                    rusqlite::params![id, data],
+                )
+                .unwrap();
+            }
+        }
+        crate::sqlite::save_setting(&dir, "profile_yaml", "skills: Rust, AI").unwrap();
+        crate::sqlite::save_applications(
+            &dir,
+            &[json!({"id": "1", "title": "높은점수공고", "status": "지원"})],
+        )
+        .unwrap();
+
+        // 일반 대화(공고 미연결)에도 프로필·공고·파이프라인이 전부 보인다
+        let s = build_chat_system(&dir, None);
+        assert!(s.contains("[기술 프로필]"), "프로필 주입");
+        assert!(s.contains("skills: Rust, AI"));
+        assert!(s.contains("[공고 캐시"), "공고 요약 주입");
+        assert!(s.contains("높은점수공고") && s.contains("낮은점수공고"));
+        assert!(s.contains("월 500만원"));
+        assert!(s.contains("[지원 파이프라인"), "파이프라인 현황 주입");
+        assert!(s.contains("단계 지원"));
+        // 매칭 점수 내림차순 — 높은 점수가 먼저
+        let hi = s.find("높은점수공고").unwrap();
+        let lo = s.find("낮은점수공고").unwrap();
+        assert!(hi < lo, "적합도순 정렬");
+
+        // 연결 대화는 해당 공고 상세까지
+        let linked = build_chat_system(&dir, Some("1"));
+        assert!(
+            linked.contains("[연결 공고 상세 — 1]"),
+            "연결 공고 상세 주입"
         );
         let _ = std::fs::remove_dir_all(&dir);
     }
