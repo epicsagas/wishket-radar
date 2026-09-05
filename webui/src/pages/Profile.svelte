@@ -127,6 +127,7 @@
       await refresh()
     } catch (e) {
       presetError = String(e)
+      loadPresets() // 실패해도 select가 실제 활성을 다시 표시하도록
     }
   }
 
@@ -145,7 +146,16 @@
     }
   }
 
-  async function removePreset(name: string) {
+  // 활성 프리셋은 서버가 삭제를 거부하므로 비활성 프리셋을 대상으로 한다 —
+  // 비활성이 1개뿐이면(가장 흔한 경우) 원클릭, 여러 개면 이름 확인
+  async function removeInactivePreset() {
+    const inactive = presets.filter((p) => p !== activePreset)
+    if (!inactive.length) return
+    const name =
+      inactive.length === 1
+        ? inactive[0]
+        : prompt(`삭제할 프리셋 이름 — 대상: ${presets.join(', ')}`)
+    if (!name || !presets.includes(name) || name === activePreset) return
     if (!confirm(`프리셋 "${name}"을 삭제할까요?`)) return
     presetError = ''
     try {
@@ -390,7 +400,7 @@
       </select>
       <button class="ghost" onclick={newPreset}>＋ 새 프리셋</button>
       {#if activePreset && presets.length > 1}
-        <button class="ghost del" onclick={() => removePreset(activePreset!)}>삭제</button>
+        <button class="ghost del" onclick={removeInactivePreset}>삭제</button>
       {/if}
     </div>
   </div>
@@ -453,7 +463,7 @@
           <table class="wsug">
             <thead><tr><th>스킬</th><th>현재</th><th>제안</th><th>근거</th></tr></thead>
             <tbody>
-              {#each wSugs as s (s.name)}
+              {#each wSugs as s, i (i)}
                 <tr>
                   <td>{s.name}</td>
                   <td class="mono">{s.from ?? '-'}</td>

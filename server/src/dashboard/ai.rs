@@ -639,11 +639,13 @@ async fn generate_proposal(
     let profile = crate::state::load_profile_yaml(&app.state_dir).unwrap_or_default();
     let project = serde_json::to_value(e)
         .map_err(|e| err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-    let draft_path = app
-        .state_dir
-        .join("proposals")
-        .join(&body.id)
-        .join("draft.md");
+    // id는 수집된 href 세그먼트(검증 안 됨)이므로 파일 경로는 resolve로
+    // 정규화한다 — "../" 등 트래버설 차단 + files API와 같은 이름 규칙.
+    let draft_path = super::fsutil::resolve(
+        &app.state_dir.join("proposals"),
+        &format!("{}/draft.md", body.id),
+    )
+    .map_err(|e| err(StatusCode::BAD_REQUEST, e))?;
     let existing = std::fs::read_to_string(&draft_path).unwrap_or_default();
     let revising = !existing.trim().is_empty();
     let user = format!(
@@ -658,12 +660,7 @@ async fn generate_proposal(
     );
     let system = proposal_system();
     let completion = complete(&cfg, &system, &[("user".into(), user)]).await?;
-    let text = completion
-        .text
-        .trim()
-        .trim_start_matches("```markdown")
-        .trim_end_matches("```")
-        .to_string();
+    let text = strip_code_fence(&completion.text).to_string();
     if text.trim().is_empty() {
         return Err(err(
             StatusCode::BAD_GATEWAY,
@@ -792,6 +789,24 @@ fn extract_json(text: &str) -> Option<&str> {
     let start = text.find('{')?;
     let end = text.rfind('}')?;
     (start < end).then(|| &text[start..=end])
+}
+
+/// 모델이 전체를 코드펜스로 감쌀 때 벗긴다. "설명:\n```markdown\n본문\n```"처럼
+/// 설명 뒤에 펜스가 와도 처리되게 첫 펜스~마지막 펜스 사이를 본문으로 본다.
+/// 펜스가 없으면 원문.
+fn strip_code_fence(text: &str) -> &str {
+    let t = text.trim();
+    if let (Some(s), Some(e)) = (t.find("```"), t.rfind("```")) {
+        if s < e {
+            let body = &t[s..e];
+            return body
+                .split_once('\n')
+                .map(|(_, rest)| rest)
+                .unwrap_or(body)
+                .trim();
+        }
+    }
+    t
 }
 
 // ---------------------------------------------------------------------------
@@ -1605,11 +1620,13 @@ mod tests {
             .unwrap()
             .block_on(generate_proposal(
                 State(state),
-                Json(ProposalBody { id: "158".into() }),
+                Json(ProposalBody {
+                    id: "158063".into(),
+                }),
             ));
         assert!(matches!(res, Err((StatusCode::CONFLICT, _))), "키 없이 409");
         // 저장 시도조차 없었음 — 파일 없음
-        assert!(!dir.join("proposals/158/draft.md").exists());
+        assert!(!dir.join("proposals/158063/draft.md").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -1637,24 +1654,29 @@ mod tests {
             let _ = crate::sqlite::create_conversation(&dir, None, "스키마 생성");
             let data = r#"{"first_seen":"2026-09-01T10:00:00+09:00","title":"AI 챗봇 개발","description":"본문"}"#;
             conn.execute(
-                "INSERT INTO seen (id, data) VALUES ('158', ?1)",
+                "INSERT INTO seen (id, data) VALUES ('158063', ?1)",
                 rusqlite::params![data],
             )
             .unwrap();
         }
         let state = app(dir.clone());
         // 기존 draft 심기 — 재생성 시 .bak으로 보존되는지 단증
-        let draft = dir.join("proposals/158/draft.md");
+        let draft = dir.join("proposals/158063/draft.md");
         std::fs::create_dir_all(draft.parent().unwrap()).unwrap();
         std::fs::write(&draft, "이전 수동 편집본").unwrap();
 
-        let res = generate_proposal(State(state), Json(ProposalBody { id: "158".into() }))
-            .await
-            .unwrap();
+        let res = generate_proposal(
+            State(state),
+            Json(ProposalBody {
+                id: "158063".into(),
+            }),
+        )
+        .await
+        .unwrap();
         assert_eq!(res.0["revised"], json!(true), "기존 초안이 맥락으로 갔다");
         let saved = std::fs::read_to_string(&draft).unwrap();
         assert!(saved.contains("## 제안 개요"), "생성본 저장");
-        let bak = std::fs::read_to_string(dir.join("proposals/158/draft.md.bak")).unwrap();
+        let bak = std::fs::read_to_string(dir.join("proposals/158063/draft.md.bak")).unwrap();
         assert_eq!(bak, "이전 수동 편집본", ".bak 1세대 보존");
         let _ = std::fs::remove_dir_all(&dir);
     }
