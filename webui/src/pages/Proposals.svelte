@@ -50,6 +50,7 @@
   // 제안서 AI 초안 (v0.7) — 공고별로 생성, 완료 후 편집기로 바로 연다
   let aiBusyId = $state<string | null>(null)
   let aiMsg = $state('')
+  let aiOk = $state(false)
 
   async function generateDraft(id: string) {
     aiBusyId = id
@@ -62,8 +63,10 @@
       const res = await api<{ files: FileEntry[] }>(`/api/files/${root}`)
       files = res.files
       selected = r.path
+      aiOk = true
       aiMsg = '초안이 생성되었습니다 — 편집 후 저장하세요.'
     } catch (e) {
+      aiOk = false
       aiMsg = String(e)
     } finally {
       aiBusyId = null
@@ -79,7 +82,7 @@
 </div>
 
 {#if error}<div class="banner err">{error}</div>{/if}
-{#if aiMsg}<div class="banner info">{aiMsg}</div>{/if}
+{#if aiMsg}<div class="banner {aiOk ? 'info' : 'err'}">{aiMsg}</div>{/if}
 
 <div class="split">
   <div class="panel list">

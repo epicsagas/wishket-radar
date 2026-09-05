@@ -322,7 +322,7 @@ async fn get_profile_presets(State(app): ApiState) -> Result<Json<Value>, ApiErr
     Ok(Json(json!({ "active": active, "names": names })))
 }
 
-/// POST /api/profile/presets {name, copy_from?} — 생성. 중복 409.
+/// POST /api/profile/presets {name, copy_from?} — 생성. 이름 문제 400, 중복 409.
 async fn post_profile_preset(
     State(app): ApiState,
     Json(body): Json<Value>,
@@ -331,13 +331,23 @@ async fn post_profile_preset(
         .get("name")
         .and_then(Value::as_str)
         .ok_or_else(|| err(StatusCode::BAD_REQUEST, "name 필드 필요"))?;
-    if name.trim().is_empty() {
-        return Err(err(StatusCode::BAD_REQUEST, "프리셋 이름이 비었습니다"));
-    }
     let copy_from = body.get("copy_from").and_then(Value::as_str);
-    state::sqlite_create_preset(&app.state_dir, name, copy_from)
-        .map_err(|e| err(StatusCode::CONFLICT, e.to_string()))?;
-    Ok(Json(json!({ "ok": true })))
+    match state::sqlite_create_preset(&app.state_dir, name, copy_from) {
+        Ok(()) => Ok(Json(json!({ "ok": true }))),
+        Err(state::PresetError::Duplicate) => {
+            Err(err(StatusCode::CONFLICT, "이미 있는 프리셋 이름입니다"))
+        }
+        Err(state::PresetError::NotFound) => Err(err(
+            StatusCode::NOT_FOUND,
+            "복제할 프리셋을 찾을 수 없습니다",
+        )),
+        Err(state::PresetError::BadName) => Err(err(
+            StatusCode::BAD_REQUEST,
+            "프리셋 이름은 1~64자, '/' 제외",
+        )),
+        Err(state::PresetError::Internal(m)) => Err(err(StatusCode::INTERNAL_SERVER_ERROR, m)),
+        Err(_) => Err(err(StatusCode::BAD_REQUEST, "프리셋을 만들 수 없습니다")),
+    }
 }
 
 /// DELETE /api/profile/presets/{name} — 활성·마지막 프리셋은 400, 미존재 404.
@@ -347,20 +357,19 @@ async fn delete_profile_preset(
 ) -> Result<StatusCode, ApiError> {
     match state::sqlite_delete_preset(&app.state_dir, &name) {
         Ok(()) => Ok(StatusCode::NO_CONTENT),
-        Err(crate::sqlite::PresetDeleteError::NotFound) => {
+        Err(state::PresetError::NotFound) => {
             Err(err(StatusCode::NOT_FOUND, "프리셋을 찾을 수 없습니다"))
         }
-        Err(crate::sqlite::PresetDeleteError::Active) => Err(err(
+        Err(state::PresetError::Active) => Err(err(
             StatusCode::BAD_REQUEST,
             "활성 프리셋은 삭제할 수 없습니다 — 먼저 다른 프리셋으로 전환하세요",
         )),
-        Err(crate::sqlite::PresetDeleteError::Last) => Err(err(
+        Err(state::PresetError::Last) => Err(err(
             StatusCode::BAD_REQUEST,
             "마지막 프리셋은 삭제할 수 없습니다",
         )),
-        Err(crate::sqlite::PresetDeleteError::Internal(m)) => {
-            Err(err(StatusCode::INTERNAL_SERVER_ERROR, m))
-        }
+        Err(state::PresetError::Internal(m)) => Err(err(StatusCode::INTERNAL_SERVER_ERROR, m)),
+        Err(_) => Err(err(StatusCode::BAD_REQUEST, "삭제할 수 없습니다")),
     }
 }
 
@@ -369,9 +378,14 @@ async fn post_activate_preset(
     State(app): ApiState,
     Path(name): Path<String>,
 ) -> Result<Json<Value>, ApiError> {
-    state::sqlite_activate_preset(&app.state_dir, &name)
-        .map_err(|e| err(StatusCode::NOT_FOUND, e.to_string()))?;
-    Ok(Json(json!({ "ok": true, "active": name })))
+    match state::sqlite_activate_preset(&app.state_dir, &name) {
+        Ok(()) => Ok(Json(json!({ "ok": true, "active": name }))),
+        Err(state::PresetError::NotFound) => {
+            Err(err(StatusCode::NOT_FOUND, "프리셋을 찾을 수 없습니다"))
+        }
+        Err(state::PresetError::Internal(m)) => Err(err(StatusCode::INTERNAL_SERVER_ERROR, m)),
+        Err(_) => Err(err(StatusCode::BAD_REQUEST, "전환할 수 없습니다")),
+    }
 }
 
 async fn put_profile(

@@ -64,6 +64,7 @@
   // 제안서 AI 초안 (v0.7)
   let draftBusy = $state(false)
   let draftMsg = $state('')
+  let draftOk = $state(false)
 
   async function generateDraft() {
     draftBusy = true
@@ -76,8 +77,10 @@
       docs = (await api<{ files: FileEntry[] }>('/api/files/proposals')).files.filter(
         (f) => f.project_id === id,
       )
+      draftOk = true
       draftMsg = `초안이 생성되었습니다 — ${r.path.split('/').pop()} 열어 편집하세요.`
     } catch (e) {
+      draftOk = false
       draftMsg = String(e)
     } finally {
       draftBusy = false
@@ -253,7 +256,7 @@
           {draftBusy ? '생성 중…' : 'AI 초안 생성'}
         </button>
       </h2>
-      {#if draftMsg}<div class="banner info">{draftMsg}</div>{/if}
+      {#if draftMsg}<div class="banner {draftOk ? 'info' : 'err'}">{draftMsg}</div>{/if}
       {#if docs.length}
         <ul class="docs">
           {#each docs as f (f.name)}
