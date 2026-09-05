@@ -30,7 +30,7 @@ fn today() -> String {
     state::now_iso().get(..10).unwrap_or("").to_string()
 }
 
-fn render_markdown(src: &str) -> String {
+pub(crate) fn render_markdown(src: &str) -> String {
     // v0.5부터 비신뢰 내용이 흐른다 — 공고 본문(3자 작성)이 모델 출력 경유로
     // 리포트에 들어온다. 예전 "전부 본인 파일" 전제는 깨졌고, 예정대로
     // ammonia를 붙인다. img는 태그 자체를 뺀다 — 원격 <img>는 남으면
