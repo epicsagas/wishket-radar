@@ -753,7 +753,18 @@ async fn suggest_weights(State(app): ApiState) -> Result<Json<Value>, ApiError> 
         .join("\n");
     let user = format!("[현재 스킬 가중치]\n{current}\n\n[공고 히스토리]\n{stats}");
     let completion = complete(&cfg, WEIGHTS_SYSTEM, &[("user".into(), user)]).await?;
-    let Some(json_str) = extract_json(&completion.text) else {
+    let suggestions = parse_weight_suggestions(&completion.text)?;
+    Ok(Json(json!({
+        "suggestions": suggestions,
+        "model": cfg.model,
+        "usage": {"input_tokens": completion.usage.0, "output_tokens": completion.usage.1},
+    })))
+}
+
+/// 모델 응답 → 조정안 JSON. 저장은 하지 않는다(호출부가 응답으로만 돌려준다).
+/// 가중치 범위 방어 — 모델이 1~5를 벗어나면 자른다. from은 클라 표시용.
+fn parse_weight_suggestions(text: &str) -> Result<Vec<Value>, ApiError> {
+    let Some(json_str) = extract_json(text) else {
         return Err(err(
             StatusCode::BAD_GATEWAY,
             "모델 응답에서 JSON을 찾지 못했습니다",
@@ -763,8 +774,7 @@ async fn suggest_weights(State(app): ApiState) -> Result<Json<Value>, ApiError> 
         .map_err(|e| err(StatusCode::BAD_GATEWAY, format!("JSON 파싱 실패: {e}")))?;
     let suggestions: Vec<WeightSuggestion> = serde_json::from_value(parsed["suggestions"].clone())
         .map_err(|e| err(StatusCode::BAD_GATEWAY, format!("제안 형식 오류: {e}")))?;
-    // 가중치 범위 방어 — 모델이 1~5를 벗어나면 자르고 from은 클라 표시용으로만
-    let suggestions: Vec<Value> = suggestions
+    Ok(suggestions
         .into_iter()
         .map(|s| {
             json!({
@@ -774,12 +784,7 @@ async fn suggest_weights(State(app): ApiState) -> Result<Json<Value>, ApiError> 
                 "reason": s.reason,
             })
         })
-        .collect();
-    Ok(Json(json!({
-        "suggestions": suggestions,
-        "model": cfg.model,
-        "usage": {"input_tokens": completion.usage.0, "output_tokens": completion.usage.1},
-    })))
+        .collect())
 }
 
 /// 모델 응답에서 첫 `{`~마지막 `}` 사이를 뽑는다(설명 문장 동봉 대비).
@@ -1590,5 +1595,84 @@ mod tests {
             "연결 공고 상세 주입"
         );
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn proposal_requires_ai_config() {
+        let dir = tmpdir("proposal-409");
+        let state = app(dir.clone());
+        let res = tokio::runtime::Runtime::new()
+            .unwrap()
+            .block_on(generate_proposal(
+                State(state),
+                Json(ProposalBody { id: "158".into() }),
+            ));
+        assert!(matches!(res, Err((StatusCode::CONFLICT, _))), "키 없이 409");
+        // 저장 시도조차 없었음 — 파일 없음
+        assert!(!dir.join("proposals/158/draft.md").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn proposal_generates_saves_and_backs_up() {
+        let app_routes = axum::Router::new().route(
+            "/v1/messages",
+            axum::routing::post(|| async {
+                axum::Json(json!({
+                    "content": [{"type": "text", "text": "## 제안 개요\n요구에 맞는 구성입니다."}],
+                    "usage": {"input_tokens": 100, "output_tokens": 30}
+                }))
+            }),
+        );
+        let base = spawn_mock(app_routes).await;
+        let dir = tmpdir("proposal-save");
+        // 키 + 상세 캐시된 공고
+        let _ = put_settings_ai(
+            State(app(dir.clone())),
+            Json(json!({"provider": "anthropic", "model": "m", "api_key": "sk-ant-real-7777", "base_url": base})),
+        )
+        .await;
+        {
+            let conn = rusqlite::Connection::open(crate::sqlite::db_path(&dir)).unwrap();
+            let _ = crate::sqlite::create_conversation(&dir, None, "스키마 생성");
+            let data = r#"{"first_seen":"2026-09-01T10:00:00+09:00","title":"AI 챗봇 개발","description":"본문"}"#;
+            conn.execute(
+                "INSERT INTO seen (id, data) VALUES ('158', ?1)",
+                rusqlite::params![data],
+            )
+            .unwrap();
+        }
+        let state = app(dir.clone());
+        // 기존 draft 심기 — 재생성 시 .bak으로 보존되는지 단증
+        let draft = dir.join("proposals/158/draft.md");
+        std::fs::create_dir_all(draft.parent().unwrap()).unwrap();
+        std::fs::write(&draft, "이전 수동 편집본").unwrap();
+
+        let res = generate_proposal(State(state), Json(ProposalBody { id: "158".into() }))
+            .await
+            .unwrap();
+        assert_eq!(res.0["revised"], json!(true), "기존 초안이 맥락으로 갔다");
+        let saved = std::fs::read_to_string(&draft).unwrap();
+        assert!(saved.contains("## 제안 개요"), "생성본 저장");
+        let bak = std::fs::read_to_string(dir.join("proposals/158/draft.md.bak")).unwrap();
+        assert_eq!(bak, "이전 수동 편집본", ".bak 1세대 보존");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn weight_suggestions_parsing() {
+        // 정상: 설명 문장에 JSON이 섞여 있어도 추출
+        let ok = parse_weight_suggestions("분석 결과입니다.\n{\"suggestions\":[{\"name\":\"Rust\",\"from\":4,\"to\":5,\"reason\":\"관심 공고 집중\"},{\"name\":\"Java\",\"to\":9,\"reason\":\"범위 밖\"}]}").unwrap();
+        assert_eq!(ok.len(), 2);
+        assert_eq!(ok[0]["name"], "Rust");
+        assert_eq!(ok[1]["to"], 5, "가중치 1~5 clamp");
+        // 불량 JSON → 502
+        let bad = parse_weight_suggestions("suggestions가 배열이 아님 {\"suggestions\": 3}");
+        assert!(matches!(bad, Err((StatusCode::BAD_GATEWAY, _))));
+        // JSON 없음 → 502
+        assert!(matches!(
+            parse_weight_suggestions("죄송합니다, 근거가 부족합니다"),
+            Err((StatusCode::BAD_GATEWAY, _))
+        ));
     }
 }

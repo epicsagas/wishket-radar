@@ -331,6 +331,9 @@ async fn post_profile_preset(
         .get("name")
         .and_then(Value::as_str)
         .ok_or_else(|| err(StatusCode::BAD_REQUEST, "name 필드 필요"))?;
+    if name.trim().is_empty() {
+        return Err(err(StatusCode::BAD_REQUEST, "프리셋 이름이 비었습니다"));
+    }
     let copy_from = body.get("copy_from").and_then(Value::as_str);
     state::sqlite_create_preset(&app.state_dir, name, copy_from)
         .map_err(|e| err(StatusCode::CONFLICT, e.to_string()))?;
