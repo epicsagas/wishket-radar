@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.2] - 2026-09-07
+
+### Fixed
+- AI 공급자가 HTTP 200인데 JSON이 아닌 본문(잘린 응답·HTML 에러 페이지 등)을 반환하면 `공급자 응답 파싱 실패: error decoding response body`라는 reqwest 내부 문구만 노출되어 원인을 알 수 없던 문제 — 이제 상태코드·content-type·본문 앞 500자를 에러에 그대로 보여준다. `complete()`는 평가·제안서 초안·가중치 보정 3개 경로가 공유하므로 한 번에 전부 적용.
+- reqwest에 `gzip`·`brotli` 압축 해제 기능 추가 — 압축 응답을 디코딩 못 해 발생하던 파싱 실패 방지.
+
 ## [0.7.1] - 2026-09-07
 
 ### Fixed

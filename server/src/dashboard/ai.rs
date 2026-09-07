@@ -265,11 +265,39 @@ fn provider_request(
     b
 }
 
-/// 공급자 오류는 상태코드+body 그대로 전달 (429 포함). 키는 body에 없다.
-async fn provider_error(resp: reqwest::Response) -> ApiError {
+/// 본문 excerpt는 브라우저로 그대로 가므로 키가 반사됐다면 가린다 — 침해된
+/// compatible 게이트웨이가 요청 헤더(Authorization 등)를 200 본문으로 에코하는
+/// 경로를 막는다. provider_error와 공유.
+fn mask_reflected_key(body: &str, cfg: &AiConfig) -> String {
+    // 빈 패턴 replace는 모든 문자 경계에 치환을 끼워 넣는다(«a«b«…) — 키 미설정
+    // 설정(구버전 settings 역직렬화 등)에서 excerpt를 통째로 파괴한다.
+    if cfg.api_key.is_empty() {
+        return body.to_string();
+    }
+    body.replace(&cfg.api_key, "<API_KEY_REDACTED>")
+}
+
+/// excerpt 용도 본문은 1MiB까지만 읽는다 — 오작동 공급자의 대용량 본문이
+/// 메모리를 차지하는 걸 막는다.
+async fn read_capped(resp: &mut reqwest::Response) -> std::io::Result<String> {
+    const MAX_BODY: usize = 1024 * 1024;
+    let mut buf: Vec<u8> = Vec::new();
+    while buf.len() < MAX_BODY {
+        match resp.chunk().await {
+            Ok(Some(c)) => buf.extend_from_slice(&c),
+            Ok(None) => break,
+            Err(e) => return Err(std::io::Error::other(e)),
+        }
+    }
+    Ok(String::from_utf8_lossy(&buf).into_owned())
+}
+
+/// 공급자 오류는 상태코드+body 전달 (429 포함). body에 키가 반사될 수 있어
+/// 마스킹 후 노출한다.
+async fn provider_error(cfg: &AiConfig, mut resp: reqwest::Response) -> ApiError {
     let status = StatusCode::from_u16(resp.status().as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
-    let body = resp.text().await.unwrap_or_default();
-    let excerpt: String = body.chars().take(500).collect();
+    let body = read_capped(&mut resp).await.unwrap_or_default();
+    let excerpt: String = mask_reflected_key(&body, cfg).chars().take(500).collect();
     err(status, format!("공급자 오류: {excerpt}"))
 }
 
@@ -278,17 +306,33 @@ async fn complete(
     system: &str,
     history: &[(String, String)],
 ) -> Result<Completion, ApiError> {
-    let resp = provider_request(cfg, system, history, false)
+    let mut resp = provider_request(cfg, system, history, false)
         .send()
         .await
         .map_err(|e| err(StatusCode::BAD_GATEWAY, format!("공급자 연결 실패: {e}")))?;
     if !resp.status().is_success() {
-        return Err(provider_error(resp).await);
+        return Err(provider_error(cfg, resp).await);
     }
-    let v: Value = resp.json().await.map_err(|e| {
+    // resp.json()은 reqwest 내부 문구만 남겨 원인(압축·잘림·HTML 에러 페이지)을
+    // 가린다 — 원문을 받아 파싱하고, 실패 시 상태·content-type·본문 일부를 노출.
+    let status = resp.status();
+    let ct = resp
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("-")
+        .to_string();
+    let raw = read_capped(&mut resp).await.map_err(|e| {
         err(
             StatusCode::BAD_GATEWAY,
-            format!("공급자 응답 파싱 실패: {e}"),
+            format!("공급자 본문 수신 실패 ({status}): {e}"),
+        )
+    })?;
+    let v: Value = serde_json::from_str(&raw).map_err(|e| {
+        let excerpt: String = mask_reflected_key(&raw, cfg).chars().take(500).collect();
+        err(
+            StatusCode::BAD_GATEWAY,
+            format!("공급자 응답 파싱 실패 ({status}, {ct}): {e} — 본문: {excerpt}"),
         )
     })?;
     let text = if cfg.provider == "anthropic" {
@@ -1048,7 +1092,7 @@ async fn chat(State(app): ApiState, Json(body): Json<ChatBody>) -> Result<Respon
         }
     };
     if !resp.status().is_success() {
-        let (st, jv) = provider_error(resp).await;
+        let (st, jv) = provider_error(&cfg, resp).await;
         let msg =
             jv.0.get("error")
                 .and_then(Value::as_str)
@@ -1175,6 +1219,22 @@ mod tests {
     fn mask_key_hides_middle() {
         assert_eq!(mask_key("sk-ant-1234567890abcdef"), "sk-***cdef");
         assert_eq!(mask_key("short"), "***", "짧은 키는 전부 가린다");
+    }
+
+    #[test]
+    fn mask_reflected_key_empty_key_is_noop() {
+        // 빈 키: replace("")는 전부 파괴하므로 원문을 그대로 둬야 excerpt가 산다.
+        let mut c = cfg("anthropic", None);
+        c.api_key = String::new();
+        assert_eq!(
+            mask_reflected_key("<html>err</html>", &c),
+            "<html>err</html>"
+        );
+        let c2 = cfg("anthropic", None);
+        assert_eq!(
+            mask_reflected_key("key=sk-test-1234567890abcd", &c2),
+            "key=<API_KEY_REDACTED>"
+        );
     }
 
     #[test]
@@ -1387,6 +1447,47 @@ mod tests {
         };
         assert_eq!(status, StatusCode::TOO_MANY_REQUESTS, "429 그대로 전달");
         assert!(v["error"].as_str().unwrap().contains("rate limited"));
+    }
+
+    #[tokio::test]
+    async fn complete_surfaces_non_json_body() {
+        // 200 + HTML — resp.json()이 reqwest 내부 문구로 가렸던 본문 실체를
+        // 상태·content-type·excerpt로 노출하는지 (R2/AC2). 본문에 키가 반사된
+        // 경우(침해된 게이트웨이의 헤더 에코) 마스킹되는지도 함께 단증.
+        let app_routes = axum::Router::new().route(
+            "/v1/messages",
+            axum::routing::post(|| async {
+                let mut res = axum::response::Response::new(Body::from(
+                    "<html>overloaded key=sk-test-1234567890abcd</html>",
+                ));
+                res.headers_mut()
+                    .insert(header::CONTENT_TYPE, HeaderValue::from_static("text/html"));
+                res
+            }),
+        );
+        let base = spawn_mock(app_routes).await;
+        let Err((status, Json(v))) = complete(
+            &cfg("anthropic", Some(&base)),
+            "sys",
+            &[("user".into(), "u".into())],
+        )
+        .await
+        else {
+            panic!("502여야 한다");
+        };
+        assert_eq!(status, StatusCode::BAD_GATEWAY);
+        let msg = v["error"].as_str().unwrap();
+        assert!(msg.contains("200"), "상태코드 포함: {msg}");
+        assert!(msg.contains("text/html"), "content-type 포함: {msg}");
+        assert!(
+            msg.contains("<html>overloaded key="),
+            "본문 excerpt 포함: {msg}"
+        );
+        assert!(
+            !msg.contains("sk-test-1234567890abcd"),
+            "반사된 키는 마스킹: {msg}"
+        );
+        assert!(msg.contains("<API_KEY_REDACTED>"), "마스킹 표기: {msg}");
     }
 
     #[tokio::test]
