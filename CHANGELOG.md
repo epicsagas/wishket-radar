@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.1] - 2026-09-07
+
+### Fixed
+- `wishket-dashboard` 스킬의 서버 시작 명령이 `${CLAUDE_PLUGIN_ROOT:-.}` bash-default 형태라 Claude Code 치환을 받지 못하고 cwd 폴백으로 빈 경로(`sh: ... No such file or directory`, exit 127)를 가리키던 문제 — plain `${CLAUDE_PLUGIN_ROOT}` 형태로 교체하고 치환 실패 시 스킬 base directory 기준 상대 경로(`<skill-base>/../../scripts/wishket-mcp`) 안내 추가.
+- `webui/package.json` 버전이 0.3.3에 멈춰 있던 것 동기화.
+
 ## [0.7.0] - 2026-09-05
 
 ### Added

@@ -12,8 +12,11 @@ The `dashboard` subcommand of `wishket-mcp` serves a local web UI reading and wr
 Run in background via Bash:
 
 ```bash
-sh "${CLAUDE_PLUGIN_ROOT:-.}/scripts/wishket-mcp" dashboard
+sh "${CLAUDE_PLUGIN_ROOT}/scripts/wishket-mcp" dashboard
 ```
+
+- `${CLAUDE_PLUGIN_ROOT}` must stay in plain form — the `:-` bash-default variant is NOT substituted by Claude Code and falls back to the cwd, which breaks the path.
+- If the variable was not substituted in your context, resolve it from this skill's base directory: the binary lives at `<skill-base-dir>/../../scripts/wishket-mcp` (plugin root `scripts/`).
 
 - Stdout prints `URL: http://127.0.0.1:8787?token=...` and LAN addresses.
 - If port conflict occurs (already running), advance directly to Step 2.
