@@ -269,6 +269,11 @@ fn provider_request(
 /// compatible 게이트웨이가 요청 헤더(Authorization 등)를 200 본문으로 에코하는
 /// 경로를 막는다. provider_error와 공유.
 fn mask_reflected_key(body: &str, cfg: &AiConfig) -> String {
+    // 빈 패턴 replace는 모든 문자 경계에 치환을 끼워 넣는다(«a«b«…) — 키 미설정
+    // 설정(구버전 settings 역직렬화 등)에서 excerpt를 통째로 파괴한다.
+    if cfg.api_key.is_empty() {
+        return body.to_string();
+    }
     body.replace(&cfg.api_key, "<API_KEY_REDACTED>")
 }
 
@@ -1214,6 +1219,22 @@ mod tests {
     fn mask_key_hides_middle() {
         assert_eq!(mask_key("sk-ant-1234567890abcdef"), "sk-***cdef");
         assert_eq!(mask_key("short"), "***", "짧은 키는 전부 가린다");
+    }
+
+    #[test]
+    fn mask_reflected_key_empty_key_is_noop() {
+        // 빈 키: replace("")는 전부 파괴하므로 원문을 그대로 둬야 excerpt가 산다.
+        let mut c = cfg("anthropic", None);
+        c.api_key = String::new();
+        assert_eq!(
+            mask_reflected_key("<html>err</html>", &c),
+            "<html>err</html>"
+        );
+        let c2 = cfg("anthropic", None);
+        assert_eq!(
+            mask_reflected_key("key=sk-test-1234567890abcd", &c2),
+            "key=<API_KEY_REDACTED>"
+        );
     }
 
     #[test]
