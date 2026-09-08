@@ -10,7 +10,7 @@ rmcp = { version = "3.1", features = ["server", "transport-io"] }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net"] }
 axum = { version = "0.8", default-features = false, features = ["http1", "json", "tokio"] }
 rust-embed = { version = "8", features = ["interpolate-folder-path"] }
-webbrowser = "0.8"
+webbrowser = "1.2"
 rand = "0.9"
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }
 ammonia = "4"
