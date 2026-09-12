@@ -12,7 +12,7 @@
       "source": {
         "source": "url",
         "url": "https://github.com/epicsagas/wishket-radar.git",
-        "sha": "d0429a32477031e4b8bcaf55dfdea80112d44ebb"
+        "sha": "33cd9794e52c76d94e56407ffc6e5564145bef31"
       },
       "homepage": "https://github.com/epicsagas/wishket-radar",
       "keywords": [
