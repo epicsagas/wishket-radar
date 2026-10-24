@@ -480,7 +480,7 @@ fn fallback_title(doc: &Html) -> Option<String> {
         (!t.is_empty() && !site_tagline).then_some(t)
     };
     for s in ["h1.project-detail-title", "h1"] {
-        if let Some(t) = doc.select(&sel(s)).next().map(text_of).and_then(&clean) {
+        if let Some(t) = doc.select(&sel(s)).next().map(text_of).and_then(clean) {
             return Some(t);
         }
     }
