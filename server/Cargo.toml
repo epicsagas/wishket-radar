@@ -16,7 +16,7 @@ pulldown-cmark = { version = "0.13", default-features = false, features = ["html
 ammonia = "4"
 reqwest = { version = "0.13", default-features = false, features = ["rustls", "json", "query", "stream", "gzip", "brotli"] }
 futures-util = { version = "0.3", default-features = false }
-scraper = "0.27"
+scraper = "0.29"
 lz-str = "0.2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
